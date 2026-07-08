@@ -1,0 +1,6 @@
+{
+  "name": "tibarekit-spike",
+  "version": "1.0.0",
+  "main": "plugin.js",
+  "type": "module"
+}
