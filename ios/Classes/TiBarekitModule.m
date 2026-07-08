@@ -19,7 +19,7 @@
 // This is generated for your module, please do not change it
 - (id)moduleGUID
 {
-  return @"804854f4-9ada-4712-9fff-910bc32f99da";
+  return @"AF0202EB-6B2F-479E-97C3-FA416542FCE0";
 }
 
 // This is generated for your module, please do not change it
