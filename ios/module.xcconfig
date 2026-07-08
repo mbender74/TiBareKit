@@ -26,3 +26,6 @@
 //
 // IMPORTANT NOTE: always use $(inherited) in your overrides
 // 
+
+FRAMEWORK_SEARCH_PATHS = $(inherited) "$(SRCROOT)/platform"
+OTHER_LDFLAGS = $(inherited) -framework BareKit
