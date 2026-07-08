@@ -7,6 +7,7 @@
 
 #import "TiBarekitModule.h"
 #import "TiBareWorkletProxy.h"
+#import "TiBareIPCProxy.h"
 #import "TiBase.h"
 #import "TiHost.h"
 #import "TiUtils.h"
@@ -70,8 +71,17 @@
 }
 
 - (id)createIPC:(id)args {
-  // Implemented in Task 5.
-  return [NSNull null];
+  TiBareWorkletProxy *workletProxy = nil;
+  if ([args isKindOfClass:[NSArray class]] && [(NSArray *)args count] > 0) {
+    id first = [(NSArray *)args firstObject];
+    if ([first isKindOfClass:[TiBareWorkletProxy class]]) {
+      workletProxy = first;
+    }
+  }
+  if (!workletProxy) return [NSNull null];
+  TiBareIPCProxy *proxy = [[TiBareIPCProxy alloc] _initWithPageContext:[self pageContext]];
+  [proxy attachToWorkletProxy:workletProxy];
+  return proxy;
 }
 
 @end
