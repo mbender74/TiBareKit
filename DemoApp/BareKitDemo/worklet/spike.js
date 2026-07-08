@@ -14,7 +14,7 @@ const Hyperswarm = require('hyperswarm')
 // entirely. The topic just needs to be the same 32 bytes on both
 // instances; a fixed 32-byte Buffer is fine for a spike.
 const TOPIC_STRING = 'tibarekit-spike-v1'
-const topic = Buffer.from('tibarekit-spike-v1-fixed-topic-32b!'.padEnd(32, '0'))
+const topic = Buffer.from(TOPIC_STRING.padEnd(32, '0'))
 
 const swarm = new Hyperswarm()
 swarm.on('connection', (socket) => {
