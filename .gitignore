@@ -4,6 +4,7 @@ ios/dist/
 ios/metadata.json
 android/build/
 android/bin/
+android/dist/
 android/gen/
 android/libs/
 android/metadata.json
