@@ -145,25 +145,36 @@ shipping.
 ("not enough space to hold load commands"), so the re-stamp is done with a
 small Python script that patches the `platform` field of each
 `LC_BUILD_VERSION` load command from `IOS` (2) / `IOSSIMULATOR` (7) to
-`MACCATALYST` (6) in every `.o` member of the prebuilt archives.
+`MACCATALYST` (6) in every `.o` member of the prebuilt archives. See
+`scripts/maccatalyst/toolchain_stamp.py` (patches `LC_BUILD_VERSION` platform
+field: IOS(2)/IOSSIMULATOR(7) → MACCATALYST(6) in every `.o` member of a
+static archive, then re-archives with `ar rcs` + ranlib).
+
+Toolchain files: `scripts/maccatalyst/ios-arm64-maccatalyst.cmake` and
+`ios-x86_64-maccatalyst.cmake` (substitute `<MACOSX_SDK>` with your MacOSX
+SDK path, and `<BARE_MAKE_CMAKE_TOOLCHAINS>` with the path to the
+`cmake-toolchains` dir shipped with `bare-make`, e.g.
+`$(npm root -g)/bare-make/node_modules/cmake-toolchains`). They model the
+upstream `cmake-toolchains/ios-$arch.cmake` but set the target to
+`*-apple-ios14.0-macabi`, `CMAKE_OSX_SYSROOT=macosx`, and add
+`-iframework <macosx-sdk>/System/iOSSupport/System/Library/Frameworks
+-Wno-incompatible-sysroot` to `CMAKE_*_FLAGS_INIT` plus
+`-Wl,-undefined,dynamic_lookup` to `CMAKE_*_LINKER_FLAGS_INIT` (the
+`dynamic_lookup` flag is required because the V8 prebuilds have
+internally-undefined symbols that ld64 rejects by default on macCatalyst;
+iOS accepts them implicitly).
 
 ```bash
 cd /path/to/bare-kit
 
-# Toolchain files (model on cmake-toolchains/ios-arm64.cmake but with):
-#   target = arm64-apple-ios14.0-macabi   (or x86_64-apple-ios14.0-macabi)
-#   CMAKE_OSX_SYSROOT = macosx
-#   CMAKE_*_FLAGS_INIT += -iframework <macosx-sdk>/System/iOSSupport/System/Library/Frameworks -Wno-incompatible-sysroot
-#   CMAKE_*_LINKER_FLAGS_INIT += -Wl,-undefined,dynamic_lookup
-# (the dynamic_lookup flag is required because the V8 prebuilds have
-#  internally-undefined symbols that ld64 rejects by default on macCatalyst;
-#  iOS accepts them implicitly)
-
 for arch in arm64 x86_64; do
+  # Always start from a clean build dir — incremental reconfigure does not
+  # pick up CMAKE_*_LINKER_FLAGS_INIT changes, and the arm64 link will fail
+  # without the dynamic_lookup flag.
   rm -rf build-catalyst-$arch
   cmake -S . -B build-catalyst-$arch -G Ninja \
     -DCMAKE_MAKE_PROGRAM=$(npm root -g)/bare-make/node_modules/ninja-runtime-darwin-*/bin/ninja \
-    -DCMAKE_TOOLCHAIN_FILE=$PWD/toolchains/ios-$arch-maccatalyst.cmake \
+    -DCMAKE_TOOLCHAIN_FILE=/path/to/TiBareKit/scripts/maccatalyst/ios-$arch-maccatalyst.cmake \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
   # Re-stamp fetched prebuilds from IOS/IOSSIMULATOR to MACCATALYST.
@@ -171,24 +182,27 @@ for arch in arm64 x86_64; do
   # x86_64: no ios-x64 prebuild exists — copy ios-x64-simulator prebuilds
   #         into _deps/.../ios-x64/ before re-stamping.
   if [ "$arch" = "x86_64" ]; then
-    src=$(ls -d build/_deps/github+holepunchto+bare-build/ios-x64-simulator 2>/dev/null \
-          || ls -d build-catalyst-arm64/_deps/github+holepunchto+bare-build/ios-arm64)
+    src=build/_deps/github+holepunchto+bare-build/ios-x64-simulator
+    if [ ! -d "$src" ]; then
+      echo "ios-x64-simulator prebuilds not found at $src — run the iOS simulator build first (see iOS section above)" >&2
+      exit 1
+    fi
     dst=build-catalyst-x86_64/_deps/github+holepunchto+bare-build/ios-x64
     mkdir -p "$dst" && cp -a "$src"/libjs.a "$src"/libv8.a "$src"/libc++.a "$dst"/
     cmake -S . -B build-catalyst-x86_64  # reconfigure so find_library sees them
   fi
-  python3 toolchain_stamp.py \
+  python3 /path/to/TiBareKit/scripts/maccatalyst/toolchain_stamp.py \
     build-catalyst-$arch/_deps/github+holepunchto+bare-build/ios-*/libjs.a \
     build-catalyst-$arch/_deps/github+holepunchto+bare-build/ios-*/libv8.a \
     build-catalyst-$arch/_deps/github+holepunchto+bare-build/ios-*/libc++.a
 
-  cmake --build build-catalyst-$arch --target bare_kit --config Release
+  cmake --build build-catalyst-$arch --target bare_kit --config RelWithDebInfo
   # NOTE: if cmake re-fetches prebuilds (overwriting re-stamped ones), re-run
   # toolchain_stamp.py then re-link with `cmake --build` again.
 done
 
 # Lipo the two per-arch frameworks into a universal Catalyst framework.
-mkdir /tmp/BareKit.framework
+rm -rf /tmp/BareKit.framework && mkdir /tmp/BareKit.framework
 cp -a build-catalyst-arm64/apple/BareKit.framework/ /tmp/BareKit.framework/
 lipo -create \
   build-catalyst-arm64/apple/BareKit.framework/Versions/A/BareKit \
@@ -205,14 +219,6 @@ xcodebuild -create-xcframework \
 mv BareKit.xcframework BareKit.xcframework.old
 mv /tmp/BareKit.xcframework BareKit.xcframework
 rm -rf BareKit.xcframework.old
-```
-
-The `toolchain_stamp.py` script (lives next to the toolchain files):
-
-```python
-# Patches LC_BUILD_VERSION platform field: IOS(2)/IOSSIMULATOR(7) -> MACCATALYST(6)
-# in every .o member of a static archive, then re-archives with `ar rcs` + ranlib.
-# LC_BUILD_VERSION = 0x32; platform field is at offset+8 in the load command.
 ```
 
 ### Android
