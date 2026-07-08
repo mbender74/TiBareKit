@@ -6,6 +6,7 @@
  */
 
 #import "TiBarekitModule.h"
+#import "TiBareWorkletProxy.h"
 #import "TiBase.h"
 #import "TiHost.h"
 #import "TiUtils.h"
@@ -54,8 +55,23 @@
 
 - (void)setExampleProp:(id)value
 {
-  // Example property setter. 
+  // Example property setter.
   // Call with "MyModule.exampleProp = 'newValue'" or "MyModule.setExampleProp('newValue')"
+}
+
+- (id)createWorklet:(id)args {
+  id options = nil;
+  if ([args isKindOfClass:[NSArray class]] && [(NSArray *)args count] > 0) {
+    options = [(NSArray *)args firstObject];
+  }
+  TiBareWorkletProxy *proxy = [[TiBareWorkletProxy alloc] _initWithPageContext:[self pageContext]];
+  [proxy configureWithOptions:options];
+  return proxy;
+}
+
+- (id)createIPC:(id)args {
+  // Implemented in Task 5.
+  return [NSNull null];
 }
 
 @end
