@@ -3,5 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "commonjs",
-  "dependencies": {}
+  "dependencies": {
+    "sodium-native": "^4.1.1"
+  }
 }

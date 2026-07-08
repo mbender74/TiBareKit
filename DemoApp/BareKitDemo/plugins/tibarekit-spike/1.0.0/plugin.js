@@ -40,7 +40,26 @@ export function init(logger, config, cli) {
           throw new Error('bare-pack did not produce spike.bundle')
         }
 
-        // Task 2+ adds the prebuild-copy step here.
+        // Copy native addon prebuilds into Resources/prebuilds/<platform-arch>/.
+        // The Bare runtime's require-addon resolves .bare files from here at
+        // runtime. Walks all node_modules with ios-arm64-simulator prebuilds
+        // so Task 3's additional native deps are picked up automatically.
+        const prebuildsDir = path.join(resourcesDir, 'prebuilds', host)
+        fs.mkdirSync(prebuildsDir, { recursive: true })
+
+        const nodeModulesDir = path.join(workletDir, 'node_modules')
+        if (fs.existsSync(nodeModulesDir)) {
+          for (const modName of fs.readdirSync(nodeModulesDir)) {
+            const modPrebuilds = path.join(nodeModulesDir, modName, 'prebuilds', host)
+            if (!fs.existsSync(modPrebuilds)) continue
+            for (const file of fs.readdirSync(modPrebuilds)) {
+              if (file.endsWith('.bare')) {
+                fs.copyFileSync(path.join(modPrebuilds, file), path.join(prebuildsDir, file))
+                logger.info('tibarekit-spike: copied ' + modName + '/' + file)
+              }
+            }
+          }
+        }
 
         logger.info('tibarekit-spike: bundle ready at ' + bundlePath)
       } catch (err) {

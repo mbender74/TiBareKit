@@ -21,3 +21,8 @@ node_modules/
 # Demo app build output + extracted modules
 DemoApp/BareKitDemo/build/
 DemoApp/BareKitDemo/modules/
+
+# Demo app spike build artifacts
+DemoApp/BareKitDemo/Resources/spike.bundle
+DemoApp/BareKitDemo/Resources/prebuilds/
+DemoApp/BareKitDemo/worklet/node_modules/

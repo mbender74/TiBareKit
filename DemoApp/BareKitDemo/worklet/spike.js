@@ -1,6 +1,8 @@
-// Trivial spike worklet -- proves the bundle loads + IPC works.
-// Later tasks replace this with the hyperswarm join + echo logic.
-BareKit.IPC.write('spike alive')
+// Task 2: prove sodium-native loads inside the worklet.
+const sodium = require('sodium-native')
+
+BareKit.IPC.write('sodium loaded, version=' + sodium.sodiumVersionString())
+
 BareKit.IPC.on('data', (data) => {
   BareKit.IPC.write('echo: ' + data.toString())
 })
