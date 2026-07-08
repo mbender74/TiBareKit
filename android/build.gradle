@@ -1,5 +1,14 @@
+// This file is applied via "apply from:" by the Titanium-generated module
+// build.gradle. The projectDir here is the generated gradle project at
+// android/build/module/, so the module's android/ dir is "${projectDir}/../..".
+//
+// Note: The generated build.gradle already auto-includes all *.jar files from
+// android/lib/ via:
+//     implementation(project.fileTree(dir: "${projectDir}/../../lib", include: ['*.jar']))
+// The dependency below is redundant but explicit, documenting that bare-kit.jar
+// is a runtime dependency. AGP's syncReleaseLibJars copies it into the module's
+// AAR under libs/, so consuming apps get the classes transitively.
 
 dependencies {
-	// Add the module's library dependencies here.
-	// See:  https://developer.android.com/studio/build/dependencies
+	implementation files("${projectDir}/../../lib/bare-kit.jar")
 }

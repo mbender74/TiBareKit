@@ -223,12 +223,29 @@ rm -rf BareKit.xcframework.old
 
 ### Android
 
+The AAR is extracted into the module: `classes.jar` goes to `android/lib/bare-kit.jar`
+(compiled into the module's classes) and the native libs go to
+`android/platform/android/jniLibs/<abi>/libbare-kit.so` (bundled into the module's
+AAR via Titanium's jniLibs support). The module's AAR is self-contained — no
+app-side AAR needed.
+
 ```bash
 cd /path/to/bare-kit
 npm install                      # first time only
 export ANDROID_HOME=<your-android-sdk>
 export ANDROID_NDK_HOME=<your-android-sdk>/ndk/28.1.13356709
 ./gradlew :bare-kit:assembleRelease
-cp android/build/outputs/aar/bare-kit-release.aar \
-   /path/to/TiBareKit/android/lib/bare-kit.aar
+
+# Extract the AAR into the module.
+cd /path/to/TiBareKit/android
+rm -f lib/bare-kit.jar
+rm -rf platform/android/jniLibs
+mkdir -p /tmp/barekit-aar-extract
+unzip -o /path/to/bare-kit/android/build/outputs/aar/bare-kit-release.aar -d /tmp/barekit-aar-extract
+cp /tmp/barekit-aar-extract/classes.jar lib/bare-kit.jar
+mkdir -p platform/android/jniLibs
+for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+  mkdir -p platform/android/jniLibs/$abi
+  cp /tmp/barekit-aar-extract/jni/$abi/libbare-kit.so platform/android/jniLibs/$abi/
+done
 ```
