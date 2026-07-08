@@ -103,7 +103,7 @@ def restamp_archive(archive: str) -> int:
 
 def main():
     if len(sys.argv) < 2:
-        print("usage: restamp_maccatalyst.py <archive.a> [archive2.a ...]", file=sys.stderr)
+        print("usage: toolchain_stamp.py <archive.a> [archive2.a ...]", file=sys.stderr)
         sys.exit(2)
     total = 0
     for archive in sys.argv[1:]:

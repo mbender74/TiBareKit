@@ -139,9 +139,16 @@ An `IPC` instance is a bidirectional channel between the Titanium host and a run
 
 Wraps the worklet's IPC channel. Pass the `Worklet` instance (not the native proxy):
 
+> **Important:** The IPC channel MUST be created AFTER `worklet.start()` returns.
+> `new IPC(worklet)` dups the worklet's file descriptors immediately, and those
+> descriptors are invalid until the worklet has started. Creating the IPC before
+> `start()` returns yields a channel whose `readable` / `writable` callbacks
+> never fire. This is a bare-kit API contract inherited by TiBareKit.
+
 ```js
 const worklet = new Worklet();
-const ipc = new IPC(worklet);
+worklet.start('/app.js', source, []);
+const ipc = new IPC(worklet);   // after start()
 ```
 
 #### `ipc.readable = (fn) => {}` (setter)
@@ -375,9 +382,8 @@ const workletSource = [
 ].join('\n');
 
 const worklet = new Worklet({ memoryLimit: 24 * 1024 * 1024 });
-const ipc = new IPC(worklet);
-
 worklet.start('/app.js', workletSource, ['--demo']);
+const ipc = new IPC(worklet);
 
 // Polling read: fires when the worklet writes to IPC.
 ipc.readable = () => {

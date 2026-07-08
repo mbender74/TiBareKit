@@ -18,7 +18,7 @@
     __strong TiBareIPCProxy *strong = weakSelf;
     dispatch_async(dispatch_get_main_queue(), ^{
       if (strong->_readableCb) {
-        [strong->_readableCb call:@[@[strong]] thisObject:strong];
+        [strong->_readableCb call:@[strong] thisObject:strong];
       }
     });
   };
@@ -31,7 +31,7 @@
     __strong TiBareIPCProxy *strong = weakSelf;
     dispatch_async(dispatch_get_main_queue(), ^{
       if (strong->_writableCb) {
-        [strong->_writableCb call:@[@[strong]] thisObject:strong];
+        [strong->_writableCb call:@[strong] thisObject:strong];
       }
     });
   };

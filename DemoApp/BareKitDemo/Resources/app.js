@@ -36,9 +36,15 @@ const workletSource = [
 ].join('\n');
 
 const worklet = new Worklet({ memoryLimit: 24 * 1024 * 1024 });
-const ipc = new IPC(worklet);
 
+// IMPORTANT: create the IPC channel AFTER worklet.start() returns.
+// bare_ipc_init dups the worklet's incoming/outgoing fds immediately, and
+// those fds are -1 until the worklet thread has started. Creating the IPC
+// before start() would dup -1 and the dispatch sources would never fire
+// (readable/writable would never become true).
 worklet.start('/app.js', workletSource, ['--demo']);
+
+const ipc = new IPC(worklet);
 
 // Polling IPC: readable fires when data arrives from the worklet.
 ipc.readable = () => {

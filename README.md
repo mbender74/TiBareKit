@@ -110,13 +110,16 @@ single-dict callback contract and the write-before-writable constraint.
 
 ## Testing
 
-To test your module with the example, use:
+The demo app is at `DemoApp/BareKitDemo/`. To run it:
 
-```js
-ti build -p [ios|android]
+```bash
+ti build -p [ios|android] --project-dir DemoApp/BareKitDemo
 ```
 
-This will execute the app.js in the example/ folder as a Titanium application.
+(or `cd DemoApp/BareKitDemo && ti build -p [ios|android]`). This exercises
+the Worklet + IPC API end to end. The `example/` folder is a minimal scaffold
+harness left over from the module generator and does not demonstrate the
+module.
 
 Code strong!
 
@@ -145,6 +148,10 @@ for spec in "ios arm64" "ios arm64 --simulator" "ios x86_64 --simulator"; do
   mkdir -p "prebuilds/$slice"
   cp -a build/apple/BareKit.framework "prebuilds/$slice/BareKit.framework"
 done
+
+# Note: prebuilds/ios-arm64-simulator and prebuilds/ios-x86_64-simulator are
+# intermediate slices; `make ios/BareKit.xcframework` lipo-combines them into
+# the final prebuilds/ios-arm64_x86_64-simulator slice.
 
 cd prebuilds && make ios/BareKit.xcframework
 
@@ -253,7 +260,7 @@ app-side AAR needed.
 cd /path/to/bare-kit
 npm install                      # first time only
 export ANDROID_HOME=<your-android-sdk>
-export ANDROID_NDK_HOME=<your-android-sdk>/ndk/28.1.13356709
+export ANDROID_NDK_HOME=<your-android-sdk>/ndk/28.2.13676358
 ./gradlew :bare-kit:assembleRelease
 
 # Extract the AAR into the module.
