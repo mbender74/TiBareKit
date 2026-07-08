@@ -102,13 +102,32 @@ Code strong!
 
 ## Prebuild (maintainers)
 
-Native binaries are checked in. Rebuild them when upgrading bare-kit:
+Native binaries are checked in. Rebuild them when upgrading bare-kit. The
+flow mirrors bare-kit's upstream `publish.yml` workflow.
+
+Prerequisites: CMake 4.0+, Xcode, Android SDK + NDK 28.x, Node.js, and the
+`bare-make` npm package (`npm install --global bare-make`).
 
 ### iOS
 
 ```bash
 cd /path/to/bare-kit
-make ios/BareKit.xcframework
+npm install                      # first time only
+
+# Build each slice (the prebuilds/Makefile only assembles; slices are built
+# with bare-make per the upstream publish.yml flow):
+for spec in "ios arm64" "ios arm64 --simulator" "ios x86_64 --simulator"; do
+  set -- $spec
+  rm -rf build
+  bare-make generate --platform "$1" --arch "$2" ${3:+$3} --with-debug-symbols
+  bare-make build
+  slice="$1-$2${3:+-simulator}"
+  mkdir -p "prebuilds/$slice"
+  cp -a build/apple/BareKit.framework "prebuilds/$slice/BareKit.framework"
+done
+
+cd prebuilds && make ios/BareKit.xcframework
+
 cp -R ios/BareKit.xcframework /path/to/TiBareKit/ios/platform/BareKit.xcframework
 ```
 
@@ -116,6 +135,9 @@ cp -R ios/BareKit.xcframework /path/to/TiBareKit/ios/platform/BareKit.xcframewor
 
 ```bash
 cd /path/to/bare-kit
+npm install                      # first time only
+export ANDROID_HOME=<your-android-sdk>
+export ANDROID_NDK_HOME=<your-android-sdk>/ndk/28.1.13356709
 ./gradlew :bare-kit:assembleRelease
 cp android/build/outputs/aar/bare-kit-release.aar \
    /path/to/TiBareKit/android/lib/bare-kit.aar
