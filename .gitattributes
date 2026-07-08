@@ -1,0 +1,3 @@
+android/platform/android/jniLibs/**/*.so filter=lfs diff=lfs merge=lfs -text
+ios/platform/BareKit.xcframework/**/BareKit filter=lfs diff=lfs merge=lfs -text
+*.aar filter=lfs diff=lfs merge=lfs -text
