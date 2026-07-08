@@ -10,10 +10,8 @@ const { Worklet, IPC } = require('ti.barekit');
 
 const log = (msg) => {
   Ti.API.info('[BareKitDemo] ' + msg);
-  if (logArea) {
-    logLines.push(msg);
-    logArea.setValue(logLines.join('\n'));
-  }
+  logLines.push(msg);
+  if (logArea) logArea.value = logLines.join('\n');
 };
 
 const logLines = [];
