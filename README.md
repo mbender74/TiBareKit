@@ -131,6 +131,90 @@ cd prebuilds && make ios/BareKit.xcframework
 cp -R ios/BareKit.xcframework /path/to/TiBareKit/ios/platform/BareKit.xcframework
 ```
 
+### Mac Catalyst
+
+The Catalyst slice is built by re-stamping bare's iOS prebuilds to
+`platform macCatalyst` with a binary patch, then linking. This is a workaround
+because `bare-make` has no `maccatalyst` toolchain and the drive mirror
+publishes no Catalyst prebuilds. The binaries retain iOS semantics; only the
+platform stamp in each `LC_BUILD_VERSION` load command is changed. This may
+have subtle runtime/ABI implications — verify in a Catalyst app before
+shipping.
+
+`vtool -set-build-version maccatalyst ...` fails on these object files
+("not enough space to hold load commands"), so the re-stamp is done with a
+small Python script that patches the `platform` field of each
+`LC_BUILD_VERSION` load command from `IOS` (2) / `IOSSIMULATOR` (7) to
+`MACCATALYST` (6) in every `.o` member of the prebuilt archives.
+
+```bash
+cd /path/to/bare-kit
+
+# Toolchain files (model on cmake-toolchains/ios-arm64.cmake but with):
+#   target = arm64-apple-ios14.0-macabi   (or x86_64-apple-ios14.0-macabi)
+#   CMAKE_OSX_SYSROOT = macosx
+#   CMAKE_*_FLAGS_INIT += -iframework <macosx-sdk>/System/iOSSupport/System/Library/Frameworks -Wno-incompatible-sysroot
+#   CMAKE_*_LINKER_FLAGS_INIT += -Wl,-undefined,dynamic_lookup
+# (the dynamic_lookup flag is required because the V8 prebuilds have
+#  internally-undefined symbols that ld64 rejects by default on macCatalyst;
+#  iOS accepts them implicitly)
+
+for arch in arm64 x86_64; do
+  rm -rf build-catalyst-$arch
+  cmake -S . -B build-catalyst-$arch -G Ninja \
+    -DCMAKE_MAKE_PROGRAM=$(npm root -g)/bare-make/node_modules/ninja-runtime-darwin-*/bin/ninja \
+    -DCMAKE_TOOLCHAIN_FILE=$PWD/toolchains/ios-$arch-maccatalyst.cmake \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+  # Re-stamp fetched prebuilds from IOS/IOSSIMULATOR to MACCATALYST.
+  # arm64: ios-arm64 prebuilds (platform IOS) are fetched automatically.
+  # x86_64: no ios-x64 prebuild exists — copy ios-x64-simulator prebuilds
+  #         into _deps/.../ios-x64/ before re-stamping.
+  if [ "$arch" = "x86_64" ]; then
+    src=$(ls -d build/_deps/github+holepunchto+bare-build/ios-x64-simulator 2>/dev/null \
+          || ls -d build-catalyst-arm64/_deps/github+holepunchto+bare-build/ios-arm64)
+    dst=build-catalyst-x86_64/_deps/github+holepunchto+bare-build/ios-x64
+    mkdir -p "$dst" && cp -a "$src"/libjs.a "$src"/libv8.a "$src"/libc++.a "$dst"/
+    cmake -S . -B build-catalyst-x86_64  # reconfigure so find_library sees them
+  fi
+  python3 toolchain_stamp.py \
+    build-catalyst-$arch/_deps/github+holepunchto+bare-build/ios-*/libjs.a \
+    build-catalyst-$arch/_deps/github+holepunchto+bare-build/ios-*/libv8.a \
+    build-catalyst-$arch/_deps/github+holepunchto+bare-build/ios-*/libc++.a
+
+  cmake --build build-catalyst-$arch --target bare_kit --config Release
+  # NOTE: if cmake re-fetches prebuilds (overwriting re-stamped ones), re-run
+  # toolchain_stamp.py then re-link with `cmake --build` again.
+done
+
+# Lipo the two per-arch frameworks into a universal Catalyst framework.
+mkdir /tmp/BareKit.framework
+cp -a build-catalyst-arm64/apple/BareKit.framework/ /tmp/BareKit.framework/
+lipo -create \
+  build-catalyst-arm64/apple/BareKit.framework/Versions/A/BareKit \
+  build-catalyst-x86_64/apple/BareKit.framework/Versions/A/BareKit \
+  -output /tmp/BareKit.framework/Versions/A/BareKit
+
+# Add the Catalyst slice to the xcframework.
+cd /path/to/TiBareKit/ios/platform
+xcodebuild -create-xcframework \
+  -framework BareKit.xcframework/ios-arm64/BareKit.framework \
+  -framework BareKit.xcframework/ios-arm64_x86_64-simulator/BareKit.framework \
+  -framework /tmp/BareKit.framework \
+  -output /tmp/BareKit.xcframework
+mv BareKit.xcframework BareKit.xcframework.old
+mv /tmp/BareKit.xcframework BareKit.xcframework
+rm -rf BareKit.xcframework.old
+```
+
+The `toolchain_stamp.py` script (lives next to the toolchain files):
+
+```python
+# Patches LC_BUILD_VERSION platform field: IOS(2)/IOSSIMULATOR(7) -> MACCATALYST(6)
+# in every .o member of a static archive, then re-archives with `ar rcs` + ranlib.
+# LC_BUILD_VERSION = 0x32; platform field is at offset+8 in the load command.
+```
+
 ### Android
 
 ```bash
