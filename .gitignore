@@ -17,3 +17,7 @@ node_modules/
 
 # Superpowers SDD scratch
 .superpowers/
+
+# Demo app build output + extracted modules
+DemoApp/BareKitDemo/build/
+DemoApp/BareKitDemo/modules/
