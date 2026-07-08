@@ -99,3 +99,24 @@ ti build -p [ios|android]
 This will execute the app.js in the example/ folder as a Titanium application.
 
 Code strong!
+
+## Prebuild (maintainers)
+
+Native binaries are checked in. Rebuild them when upgrading bare-kit:
+
+### iOS
+
+```bash
+cd /path/to/bare-kit
+make ios/BareKit.xcframework
+cp -R ios/BareKit.xcframework /path/to/TiBareKit/ios/platform/BareKit.xcframework
+```
+
+### Android
+
+```bash
+cd /path/to/bare-kit
+./gradlew :bare-kit:assembleRelease
+cp android/build/outputs/aar/bare-kit-release.aar \
+   /path/to/TiBareKit/android/lib/bare-kit.aar
+```
