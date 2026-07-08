@@ -1,6 +1,15 @@
 // Titanium build plugin: runs bare-pack to produce Resources/spike.bundle
-// before the Titanium compile step. Task 1's version has no native prebuilds
-// to copy; later tasks extend the copy step.
+// + offloads native addon .bare prebuilds to Resources/node_modules/ before
+// the Titanium compile step.
+//
+// --offload-addons writes .bare files as real files next to the bundle
+// (Resources/node_modules/<pkg>/prebuilds/<host>/<addon>.bare) and records
+// file: URLs in the bundle that resolve to those real paths at runtime.
+// This is required because the Bare bundle protocol does not extract
+// embedded addons to disk before dlopen -- the .bare must be a real file
+// at a path the bundle can resolve. Without --offload-addons, the .bare is
+// embedded in the bundle as a virtual path, dlopen fails, and the worklet
+// aborts (SIGABRT).
 //
 // Note on mechanism: SDK 14.0.0 loads project plugins via cli.scanHooks() on
 // the plugin's hooks/ directory (see node-titanium-sdk/lib/titanium.js
@@ -23,42 +32,25 @@ export function init(logger, config, cli) {
       const bundlePath = path.join(resourcesDir, 'spike.bundle')
 
       // For the spike, always ios-arm64-simulator (Apple Silicon sim target).
-      // If the sim is x86_64, the implementer adjusts --host (determined in Step 8).
       const host = 'ios-arm64-simulator'
 
-      logger.info('tibarekit-spike: packing worklet bundle...')
+      logger.info('tibarekit-spike: packing worklet bundle + offloading addons...')
 
       try {
-        // Run bare-pack. --host ios-arm64-simulator is the 2.x CLI form
-        // (replaces the older --platform/--arch/--simulator flags).
+        // --offload-addons writes .bare prebuilds as real files next to the
+        // bundle (Resources/node_modules/<pkg>/prebuilds/<host>/<addon>.bare)
+        // and records file: URLs in the bundle. At runtime, the bundle
+        // resolves the addon to a sibling path on disk, which dlopen loads.
+        // Running with cwd=workletDir and entry "spike.js" (relative) keeps
+        // the bundle's internal paths root-relative (/spike.js, /node_modules/..)
+        // so the offloaded ../node_modules/... path resolves correctly.
         execSync(
-          `bare-pack --host ${host} --out "${bundlePath}" "${path.join(workletDir, 'spike.js')}"`,
+          `bare-pack --host ${host} --offload-addons --out "${bundlePath}" spike.js`,
           { stdio: 'inherit', cwd: workletDir }
         )
 
         if (!fs.existsSync(bundlePath)) {
           throw new Error('bare-pack did not produce spike.bundle')
-        }
-
-        // Copy native addon prebuilds into Resources/prebuilds/<platform-arch>/.
-        // The Bare runtime's require-addon resolves .bare files from here at
-        // runtime. Walks all node_modules with ios-arm64-simulator prebuilds
-        // so Task 3's additional native deps are picked up automatically.
-        const prebuildsDir = path.join(resourcesDir, 'prebuilds', host)
-        fs.mkdirSync(prebuildsDir, { recursive: true })
-
-        const nodeModulesDir = path.join(workletDir, 'node_modules')
-        if (fs.existsSync(nodeModulesDir)) {
-          for (const modName of fs.readdirSync(nodeModulesDir)) {
-            const modPrebuilds = path.join(nodeModulesDir, modName, 'prebuilds', host)
-            if (!fs.existsSync(modPrebuilds)) continue
-            for (const file of fs.readdirSync(modPrebuilds)) {
-              if (file.endsWith('.bare')) {
-                fs.copyFileSync(path.join(modPrebuilds, file), path.join(prebuildsDir, file))
-                logger.info('tibarekit-spike: copied ' + modName + '/' + file)
-              }
-            }
-          }
         }
 
         logger.info('tibarekit-spike: bundle ready at ' + bundlePath)
