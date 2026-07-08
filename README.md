@@ -72,21 +72,41 @@ and assets into the application.
 
 ## Example Usage
 
-To use your module in code, you will need to require it.
+To use your module in code, you will need to require it. The module exports
+`{ Worklet, IPC }`.
 
 ### ES6+ (recommended)
 
 ```js
-import MyModule from 'ti.barekit';
-MyModule.foo();
+import { Worklet, IPC } from 'ti.barekit';
+
+const worklet = new Worklet({ memoryLimit: 24 * 1024 * 1024 });
+const ipc = new IPC(worklet);
+
+worklet.start('/app.js', "BareKit.IPC.on('data', (d) => BareKit.IPC.write('echo: ' + d.toString()));", []);
+
+ipc.writable = () => { ipc.write('hello from main'); };
+ipc.readable = () => { Ti.API.info('worklet: ' + ipc.read().toString()); };
 ```
 
 ### ES5
 
 ```js
-var MyModule = require('ti.barekit');
-MyModule.foo();
+var TiBareKit = require('ti.barekit');
+var Worklet = TiBareKit.Worklet;
+var IPC = TiBareKit.IPC;
+
+var worklet = new Worklet({ memoryLimit: 24 * 1024 * 1024 });
+var ipc = new IPC(worklet);
+
+worklet.start('/app.js', "BareKit.IPC.on('data', (d) => BareKit.IPC.write('echo: ' + d.toString()));", []);
+
+ipc.writable = function () { ipc.write('hello from main'); };
+ipc.readable = function () { Ti.API.info('worklet: ' + ipc.read().toString()); };
 ```
+
+See `documentation/index.md` for the full API reference, including the
+single-dict callback contract and the write-before-writable constraint.
 
 ## Testing
 
