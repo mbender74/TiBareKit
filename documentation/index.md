@@ -253,18 +253,42 @@ const worklet = new Worklet({ memoryLimit: 24 * 1024 * 1024 });  // 24 MB
 
 ### `assets`
 
-`new Worklet({ assets: true })` enables the asset-bundling path. This is needed when the worklet loads a `.bundle` file that embeds assets (the upstream `bare-make` asset pipeline). Leave it `false` for inline-source worklets.
+`new Worklet({ assets: <path> })` passes the Bare worklet a writable
+filesystem directory where it extracts bundled assets before the main
+module loads. The worklet's `start` (bare-kit `shared/worklet.js`)
+runs `unpack(bundle, { files: false, assets: true }, cb)`: it writes
+each `bundle.assets` entry to `<assets>/<bundle-id>/<key>` and rewrites
+that entry's URL to a `file:` URL pointing at the extracted file, so
+runtime code can read it through the normal `file:` protocol.
+
+The value must be a real filesystem path (a string), not a Titanium
+file URL or scheme. On iOS, `Ti.Filesystem.filesDirectory` is a real
+path. On Android, `Ti.Filesystem.applicationDataDirectory` is the
+scheme prefix `appdata-private://` (not a real path), so resolve it
+via `Ti.Filesystem.getFile(applicationDataDirectory, <subdir>).nativePath`.
+
+Leave it unset for inline-source worklets that don't load a `.bundle`
+with assets.
 
 ## Bundle loader mode
 
 A worklet can run either inline source or a pre-bundled `.bundle` file. Bundle mode is selected by passing `null` as the `source` argument to `start()` and giving `filename` a `.bundle` path:
 
 ```js
-const worklet = new Worklet({ assets: true });
+const worklet = new Worklet({ assets: '/path/to/writable/dir' });
 worklet.start('/app.bundle', null, ['--flag']);
 ```
 
-The `.bundle` file is produced upstream by `bare-make` and contains serialized modules and (optionally) assets. When `assets: true` is set at construction, the worklet can read bundled assets through the Bare runtime's asset API.
+The `.bundle` file is produced upstream by `bare-pack` and contains
+serialized modules plus (optionally) assets and native addon prebuilds.
+When `assets` is set at construction, the worklet extracts the bundled
+assets to that directory before loading the main module.
+
+On Android, the bundled native addons (`.bare` files) need the same
+extraction treatment: the stock worklet only extracts `bundle.assets`,
+not `bundle.addons`, so the build plugin must move the addon keys into
+`bundle.assets` before the worklet starts. See the hyperswarm-spike
+section below for the worked example.
 
 ## Worklet-side globals
 
@@ -438,17 +462,80 @@ setTimeout(() => worklet.terminate(), 6000);
 
 The `DemoApp/BareKitDemo/` app is a hyperswarm spike that proves this
 module can load the holepunch native addon stack (sodium-native,
-udx-native) and run hyperswarm inside a Bare worklet on iOS. It uses
-the bundle-loader mode (`worklet.start('/spike.bundle', null, [])`)
-with a `.bundle` produced by `bare-pack`. Two simulator instances join
-a fixed topic, discover each other through the DHT, and round-trip a
-message (app A -> worklet A -> peer -> worklet B -> app B, which
-auto-echoes back). See `DemoApp/BareKitDemo/README.md` for the full
-build + run instructions, prerequisites, success criteria, and
-failure-mode diagnostics.
+udx-native) and run hyperswarm inside a Bare worklet on iOS and
+Android. It uses the bundle-loader mode
+(`worklet.start('/spike.bundle', null, [])`) with a `.bundle` produced
+by `bare-pack`. Two instances (two iOS simulators, or an iOS simulator
+and an Android arm64 emulator) join a fixed topic, discover each other
+through the DHT, and round-trip a message (app A -> worklet A -> peer
+-> worklet B -> app B, which auto-echoes back). See
+`DemoApp/BareKitDemo/README.md` for the full build + run instructions,
+prerequisites, success criteria, and failure-mode diagnostics.
 
 This is a spike, not a production app -- the full pear-chat port
 (autobase, blind-pairing, hyperdb, chat UI) is a separate later cycle.
+
+### Android specifics
+
+The Android path mirrors iOS but required four fixes during the spike.
+They are all in the code, but called out here because they are
+non-obvious and load-bearing:
+
+1. **`new IPC(worklet)` dispatch.** The Android native module's
+   `createIPC` factory takes a `{ worklet: <proxy> }` options dict,
+   not a positional worklet proxy argument. `TiBareIPCProxy` overrides
+   `handleCreationArgs` to read the `worklet` key from the JS-side
+   options and pass it to the native constructor, so `new IPC(worklet)`
+   wires the native IPC correctly. (`assets/ti.barekit.js` translates
+   the cross-platform `new IPC(worklet)` call into the platform-specific
+   factory shape.)
+
+2. **One-shot `writable`.** The Java `BareIPC` writable source is a
+   level-triggered `Handler` post that fires continuously while the
+   outgoing fd has buffer space (always, when idle). `setWritable`
+   deregisters the native callback on first fire, so `ipc.writable`
+   delivers exactly one "ready to write" notification -- mirroring the
+   iOS fix in commit `09726b0`. Without it, the writable callback
+   fires in a tight loop and floods the log.
+
+3. **CommonJS export guard.** The Android native module already
+   exposes `Worklet`/`IPC` proxy classes with `createWorklet`/
+   `createIPC` factories and `readable`/`writable` accessor setters
+   (generated from `@Kroll.proxy` / `@Kroll.setProperty`). The
+   `assets/ti.barekit.js` CommonJS extension skips its `{Worklet, IPC}`
+   export on Android -- exporting them would collide with the native
+   getter-only `Worklet`/`IPC` properties (`kroll.extend` does a plain
+   `thisObject[name] = otherObject[name]` assignment, which throws
+   "Cannot set property Worklet ... has only a getter" on a
+   getter-only own accessor). The build auto-sets `commonjs: true` in
+   the manifest when `assets/*.js` exists, so the guard is in the file,
+   not the manifest.
+
+4. **Android addon `dlopen`.** iOS resolves offloaded addon `file:`
+   URLs through NSBundle; Android's APK assets are not on the
+   filesystem, so `dlopen` on an offloaded path fails. The stock bare
+   worklet (`bare-kit shared/worklet.js:110`) also only extracts
+   `bundle.assets` to the filesystem, not `bundle.addons` (`bare-unpack`
+   defaults `addons = files = false` when `files:false` and `addons` is
+   not explicit), so embedded addons alone still leave `dlopen` pointing
+   at a virtual bundle path. The build plugin (`plugins/tibarekit-spike/
+   1.0.0/plugin.js`) embeds the addons (no `--offload-addons`) and then
+   moves the addon keys from `bundle.addons` into `bundle.assets` via
+   `bare-bundle`; the worklet's asset-unpack path then extracts the
+   `.bare` bytes to the runtime `assets` dir and rewrites each
+   `binding.js` `.` resolution to a `file:` URL `Bare.Addon.load` can
+   `dlopen`. `app.js` passes that `assets` dir as a real filesystem
+   path (`Ti.Filesystem.getFile(applicationDataDirectory, 'bare-assets')
+   .nativePath`). At runtime you see `avc: granted { execute }` audit
+   lines for each extracted `.bare`.
+
+The build plugin runs `bare-pack` four times on Android -- once per
+ABI host (`android-arm64`, `android-arm`, `android-ia32`,
+`android-x64`) -- producing `Resources/spike-android-<host>.bundle`
+for each. `app.js` selects the one matching the runtime ABI
+(`Ti.Platform.architecture`), falling back to `android-arm64` on an
+unrecognized ABI. iOS still uses a single `Resources/spike.bundle`
+(`ios-arm64-simulator`) with `--offload-addons`.
 
 ## License
 

@@ -2,8 +2,9 @@
 
 A standalone Titanium app that proves the `ti.barekit` module can load
 the holepunch native addon stack (sodium-native, udx-native) and run
-hyperswarm inside a Bare worklet on iOS, joining a topic and echoing a
-message between two simulator instances.
+hyperswarm inside a Bare worklet on iOS and Android, joining a topic
+and echoing a message between two instances (two iOS simulators, or
+an iOS simulator and an Android arm64 emulator).
 
 This is a spike, not a production app. The full pear-chat port
 (autobase, blind-pairing, hyperdb, chat UI) is a separate later cycle.
@@ -64,7 +65,7 @@ On launch, the app:
   npm install
   ```
 
-## Build + run on two simulators
+## Build + run on two iOS simulators
 
 ```bash
 # Boot two simulators (any two iPhone-class devices work; use
@@ -85,6 +86,87 @@ ti build --project-dir DemoApp/BareKitDemo --platform ios \
 Launch both apps. In app A, type `hello` + tap Send (or press Return).
 App B's log shows `peer: hello` and auto-echoes `echo: hello`; app A's
 log receives the echo back.
+
+## Build + run on Android (arm64 emulator) <-> iOS
+
+The Android path mirrors iOS but adds three Android-specific
+mechanicals (an APK-asset path translation, a `dlopen` workaround, and
+a real-path `assets` dir). The success criteria are unchanged; the
+spike cross-talks between an Android arm64 emulator and an iOS
+simulator.
+
+### Prerequisites (Android, in addition to the iOS prereqs above)
+
+- Android emulator API 31+ with an `arm64-v8a` AVD. The upstream
+  `bare-kit` prebuilds target `minSdk` 31, so older API levels will
+  refuse to load `libbare-kit.so`.
+- The `ti.barekit` Android module built and installed. Build it from
+  the module root:
+
+  ```bash
+  cd /Users/marcbender/Titanium-Modules/TiBareKit/android
+  ti build --build-only --sdk 13.3.0 --platform android
+  # -> android/dist/ti.barekit-android-1.0.0.zip
+  ```
+
+  Install it the same way as the iOS module: unzip into the app's
+  local `modules/android/ti.barekit/1.0.0/` (flatten the nested
+  `modules/` dir the zip produces), or drop the zip at the Titanium
+  root `~/Library/Application Support/Titanium/` so the build picks it
+  up globally.
+
+- `adb` on PATH (for `adb logcat`).
+
+### Build + install on the Android emulator
+
+```bash
+# Boot an arm64 emulator (API 31+). Any Pixel-class arm64 AVD works.
+$ANDROID_HOME/emulator/emulator -avd <arm64-avd-name> &
+adb wait-for-device
+
+# Build + install on the booted emulator. The tibarekit-spike plugin
+# runs bare-pack four times (one per Android ABI host: android-arm64,
+# android-arm, android-ia32, android-x64) and relocates each bundle's
+# addon keys into bundle.assets so the stock bare worklet extracts +
+# dlopens them at runtime (see "Android addon dlopen" below).
+ti build --project-dir DemoApp/BareKitDemo --platform android \
+  --target emulator --sdk 13.3.0
+```
+
+`app.js` selects the bundle matching the runtime ABI
+(`Ti.Platform.architecture` -> `spike-android-<host>.bundle`),
+falling back to `android-arm64` on an unrecognized ABI.
+
+Run the iOS side as described above on a second simulator. The two
+apps join the same fixed topic and round-trip a message.
+
+### Android addon `dlopen` (the non-obvious part)
+
+iOS resolves offloaded addon `file:` URLs through NSBundle. Android's
+APK assets are not on the filesystem, so `dlopen` on an offloaded path
+fails. The stock bare worklet (`bare-kit shared/worklet.js:110`) also
+only extracts `bundle.assets` to the filesystem -- not `bundle.addons`
+(`bare-unpack` defaults `addons = files = false` when `files:false` and
+`addons` is not explicit) -- so embedded addons alone still leave
+`dlopen` pointing at a virtual bundle path.
+
+The spike's build plugin works around both:
+
+1. Embed the addons in each bundle (no `--offload-addons`).
+2. After `bare-pack`, move the addon keys from `bundle.addons` into
+   `bundle.assets` (via `bare-bundle`). The worklet's asset-unpack
+   path then extracts the `.bare` bytes to the runtime `assets` dir
+   and rewrites each `binding.js` `.` resolution to a `file:` URL
+   `Bare.Addon.load` can `dlopen`.
+
+`app.js` passes that writable `assets` dir as a real filesystem path,
+resolved from `Ti.Filesystem.applicationDataDirectory` (which is the
+scheme prefix `appdata-private://` on Android, not a real path) via
+`Ti.Filesystem.getFile(applicationDataDirectory, 'bare-assets').nativePath`.
+
+At runtime you'll see `avc: granted { execute }` audit lines for each
+extracted `.bare` -- that's SELinux allowing `dlopen` on the extracted
+app-private files, the signal the workaround landed.
 
 ## Success criteria
 
@@ -151,9 +233,11 @@ The spike emits a visible log line for every failure mode:
   `Ti.API.info`.** The spike uses `BareKit.IPC.write(...)` to surface
   worklet messages in the `Ti.API` log via the main-side `readable`
   callback.
-- **The spike targets ios-arm64-simulator.** For an x86_64 simulator,
-  adjust the arch in the plugin. Device + Android are out of scope for
-  the spike.
+- **The iOS spike targets ios-arm64-simulator.** For an x86_64
+  simulator, adjust the arch in the plugin. The Android spike ships
+  all four ABIs (arm64-v8a, armeabi-v7a, x86, x86_64) and selects the
+  matching bundle at runtime; iOS device + Android device are out of
+  scope for the spike.
 - **`Ti.Platform.availableMemory` returns real values on 13.3.0** (it
   was silent/zero on 14.0.0 in our testing). The appmem reporter logs
   it every 5 s for diagnostics.
