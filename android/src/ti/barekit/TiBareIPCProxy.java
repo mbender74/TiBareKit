@@ -85,9 +85,18 @@ public class TiBareIPCProxy extends KrollProxy {
       // KrollFunction call run on every fire -> unbounded native memory growth
       // (~170 MB/s observed on iOS before fix 09726b0). Mirrors the iOS one-shot.
       ipc.writable(null);
-      if (writableCb != null) {
+      // Capture the callback BEFORE the main-looper post. Without this, a
+      // setWritable(newCb) reassignment landing between the deregister above and
+      // the post firing would read the new writableCb at fire time and deliver
+      // the OLD event to it -- the newly-assigned callback fires spuriously for
+      // an event it never registered for, and its own arming is consumed without
+      // a fresh notification. Capturing freezes the callback at native-fire time
+      // so the old event always goes to the old callback; the new arming gets
+      // its own fresh fire from the next native poll arm.
+      final KrollFunction cbToFire = writableCb;
+      if (cbToFire != null) {
         new Handler(Looper.getMainLooper()).post(() ->
-          writableCb.call(getKrollObject(), new Object[] { this }));
+          cbToFire.call(getKrollObject(), new Object[] { this }));
       }
     });
   }

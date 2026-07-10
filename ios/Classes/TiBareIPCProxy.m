@@ -36,9 +36,18 @@
     // run on every fire -> unbounded native memory growth (~170 MB/s).
     // One-shot: deregister the native block before delivering the event.
     strong->_ipc.writable = nil;
+    // Capture the callback BEFORE the main-queue dispatch. Without this, a
+    // setWritable(newCb) reassignment landing between the deregister above and
+    // the dispatched block's execution would read the NEW _writableCb at fire
+    // time and deliver the OLD event to it -- the newly-assigned callback fires
+    // spuriously for an event it never registered for, and its own arming is
+    // consumed without a fresh notification. Capturing freezes the callback at
+    // native-fire time so the old event always goes to the old callback; the
+    // new arming gets its own fresh fire from the next GCD source arm.
+    KrollCallback *cbToFire = strong->_writableCb;
     dispatch_async(dispatch_get_main_queue(), ^{
-      if (strong->_writableCb) {
-        [strong->_writableCb call:@[strong] thisObject:strong];
+      if (cbToFire) {
+        [cbToFire call:@[strong] thisObject:strong];
       }
     });
   };

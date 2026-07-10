@@ -403,11 +403,16 @@ diagnostics, and the worked example.
   `android-x64` bundles are built and relocated but never `dlopen`'d at
   runtime. A wrong host mapping for an untested ABI would not be caught
   by the spike.
-- **`setWritable` re-entrancy race (production, not spike).** If
-  `ipc.writable` is reassigned in the narrow window between the native
-  fire deregistering the callback and the main-looper post delivering
-  it, the newly-assigned callback could fire spuriously for the old
-  event. The spike assigns `ipc.writable` once and never reassigns, so
-  this is inert. A production consumer that reassigns `ipc.writable`
-  should capture the callback in a local before posting or guard the
-  dispatch with a token.
+- **`setWritable` re-entrancy race (fixed).** The native writable source
+  fires on its own thread, deregisters, then posts the JS callback to
+  the main looper / main queue. If `ipc.writable` was reassigned in the
+  window between the deregister and the deferred dispatch, the posted
+  block used to read the field at fire time and deliver the OLD event
+  to the NEW callback -- a spurious fire that also consumed the new
+  arming without a fresh notification. Both proxies now capture the
+  callback in a local before the deferred dispatch (`cbToFire` in
+  `TiBareIPCProxy.m:setWritable:` and `TiBareIPCProxy.java:setWritable`),
+  so the old event always goes to the old callback and the new arming gets
+  its own fresh fire. The spike assigns `ipc.writable` once and never
+  reassigns, so the bug was inert there; the fix matters for production
+  consumers that reassign.
