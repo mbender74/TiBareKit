@@ -31,6 +31,20 @@ public class TiBareIPCProxy extends KrollProxy {
     }
   }
 
+  // `new IPC(worklet)` passes the worklet proxy as args[0], NOT a dict. The base
+  // KrollProxy.handleCreationArgs early-returns when args[0] is not a HashMap,
+  // so handleCreationDict never runs and `ipc` stays null. Override to detect
+  // the bare-worklet-arg case and construct the native IPC directly. Mirrors the
+  // idiomatic Titanium pattern (titanium_mobile BufferProxy.handleCreationArgs).
+  @Override
+  public void handleCreationArgs(org.appcelerator.kroll.KrollModule createdInModule, Object[] args) {
+    if (args != null && args.length > 0 && args[0] instanceof TiBareWorkletProxy) {
+      ipc = new IPC(((TiBareWorkletProxy) args[0]).getWorklet());
+      return;
+    }
+    super.handleCreationArgs(createdInModule, args);
+  }
+
   private ByteBuffer toBuffer(Object payload) {
     if (payload == null) return null;
     byte[] bytes;
