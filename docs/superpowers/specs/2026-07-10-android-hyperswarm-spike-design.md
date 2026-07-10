@@ -39,24 +39,43 @@ stubs:
 
 ## What the design adds
 
-Four changes, scoped to the spike.
+Four changes, scoped to the spike. (Section 1 was revised after
+plan-time research found the auto-generated Kroll factories already
+work; the real gap is the IPC proxy's creation-args dispatch.)
 
-### 1. `TiBareKitModule.java` -- `createWorklet` / `createIPC` factories
+### 1. `TiBareIPCProxy.java` -- `handleCreationArgs` override (the real blocking gap)
 
-The module class is still the auto-generated scaffold (`example()`,
-`getExampleProp`). It does not expose the factory methods that let JS
-construct `new Worklet(...)` / `new IPC(worklet)`. This is the single
-blocking gap: without the factories, the spike's JS cannot create the
-worklet or the IPC channel on Android.
+The `@Kroll.proxy(creatableInModule = TiBareKitModule.class)` annotation
+on both proxies auto-generates `createWorklet()` / `createIPC()` factory
+methods on `TiBareKitModule` at compile time -- the module scaffold
+needs no hand-written factories. The Kroll dispatch
+(`KrollProxy.handleCreationArgs`, titanium_mobile
+`KrollProxy.java:183`) is:
 
-Add two factory methods mirroring the iOS `TiBarekitModule.m`
-`createWorklet:` / `createIPC:`:
+```java
+if (args.length == 0 || !(args[0] instanceof HashMap)) {
+    handleDefaultValues();
+    return;                       // early return; handleCreationDict NOT called
+}
+...handleCreationDict(dict);
+```
 
-- `createWorklet(options)` -- returns a `TiBareWorkletProxy` configured
-  with the options dict (`memoryLimit`, `assets`).
-- `createIPC(worklet)` -- returns a `TiBareIPCProxy` attached to the
-  given worklet proxy; `[NSNull null]` / `null` if the argument is not a
-  worklet proxy.
+So `new Worklet({memoryLimit: ...})` works (the dict arg routes to
+`handleCreationDict`, which already builds the native `Worklet`). But
+`new IPC(worklet)` passes a bare `TiBareWorkletProxy` as `args[0]` --
+not a `HashMap` -- so `handleCreationArgs` takes the early-return path,
+`handleCreationDict` never runs, the `ipc` field stays `null`, and every
+IPC method no-ops (`if (ipc == null) return`). This is the single
+blocking gap: without the override, the spike's `new IPC(worklet)`
+silently produces a dead channel on Android.
+
+Override `handleCreationArgs(KrollModule createdInModule, Object[] args)`
+in `TiBareIPCProxy.java` (the idiomatic Titanium pattern -- see
+`titanium_mobile` `BufferProxy.java:54` for the same override). If
+`args[0]` is a `TiBareWorkletProxy`, construct
+`ipc = new IPC(((TiBareWorkletProxy) args[0]).getWorklet())`; otherwise
+fall through to `super.handleCreationArgs(...)`. No change to
+`TiBareKitModule.java` and no change to `TiBareWorkletProxy.java`.
 
 ### 2. `TiBareIPCProxy.java` `setWritable` -- one-shot pattern
 
