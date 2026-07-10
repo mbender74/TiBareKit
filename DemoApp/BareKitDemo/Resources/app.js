@@ -34,7 +34,30 @@ function sendToWorklet(text) {
 }
 
 const worklet = new Worklet({ memoryLimit: 64 * 1024 * 1024 })
-worklet.start('/spike.bundle', null, [])
+
+// Pick the prebuilt bundle. iOS: single Resources/spike.bundle (ios-arm64-simulator).
+// Android: one of Resources/spike-android-<host>.bundle, selected by runtime ABI.
+// Each bare-pack bundle's bytecode + --offload-addons paths target one host, so
+// starting the wrong host's bundle fails to dlopen the .bare addons. Unrecognized
+// ABI falls back to android-arm64 (emulator target + most common device ABI) --
+// do not crash on a misread platform property.
+let bundleName
+if (Ti.Platform.osname === 'android') {
+  const abiToHost = {
+    'arm64-v8a': 'android-arm64',
+    'armeabi-v7a': 'android-arm',
+    'x86': 'android-ia32',
+    'x86_64': 'android-x64'
+  }
+  const host = abiToHost[Ti.Platform.architecture]
+  if (!host) {
+    log('unknown ABI: ' + Ti.Platform.architecture + ', falling back to android-arm64')
+  }
+  bundleName = '/spike-' + (host || 'android-arm64') + '.bundle'
+} else {
+  bundleName = '/spike.bundle'
+}
+worklet.start(bundleName, null, [])
 
 // IPC MUST be created AFTER worklet.start() returns.
 const ipc = new IPC(worklet)
