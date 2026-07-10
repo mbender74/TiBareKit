@@ -64,4 +64,17 @@ class IPC {
   close() { this._proxy.close(); }
 }
 
-module.exports = { Worklet, IPC };
+// On Android the native module already exposes Worklet/IPC proxy classes
+// with createWorklet/createIPC factories and readable/writable accessor
+// setters (generated from @Kroll.proxy / @Kroll.setProperty), so the JS
+// wrappers are not needed. Exporting them here would collide with the native
+// module's getter-only Worklet/IPC properties: kroll.extend (ti.kernel.js)
+// does a plain `thisObject[name] = otherObject[name]` assignment, which
+// throws "Cannot set property Worklet ... has only a getter" on a
+// getter-only own accessor. Skip the export on Android so extend is a no-op
+// and require('ti.barekit') returns the native proxies directly.
+if (isAndroid) {
+  module.exports = {};
+} else {
+  module.exports = { Worklet, IPC };
+}

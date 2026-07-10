@@ -62,8 +62,14 @@ public class TiBareWorkletProxy extends KrollProxy {
   @Kroll.method
   public void start(String filename, Object source, String[] arguments) throws IOException {
     if (source == null && filename.endsWith(".bundle")) {
+      // Titanium packs app Resources under assets/Resources/ in the APK and
+      // exposes them via the app-relative "/file" convention. AssetManager.open
+      // needs a relative path with the "Resources/" prefix (and chokes on the
+      // leading "/"), so strip the slash and prepend Resources/. iOS resolves
+      // "/x.bundle" natively; Android must do this translation itself.
       String name = filename.substring(0, filename.length() - ".bundle".length());
-      InputStream is = TiApplication.getAppRootOrCurrentActivity().getAssets().open(name + ".bundle");
+      if (name.startsWith("/")) name = name.substring(1);
+      InputStream is = TiApplication.getAppRootOrCurrentActivity().getAssets().open("Resources/" + name + ".bundle");
       worklet.start(filename, is, arguments);
       return;
     }
