@@ -36,6 +36,17 @@ swarm.on('connection', (socket) => {
 swarm.join(topic, { client: true, server: true })
 BareKit.IPC.write('joined topic: ' + TOPIC_STRING)
 
+// 15s timeout: if no connection fires, tell main. Not a crash -- a
+// diagnostic (the DHT may not bootstrap on a restricted network).
+let connectionFired = false
+swarm.on('connection', () => { connectionFired = true })
+
+setTimeout(() => {
+  if (!connectionFired) {
+    BareKit.IPC.write('TIMEOUT: no peer discovered (check network / DHT bootstrap)')
+  }
+}, 15000)
+
 // Main -> worklet -> peer. Messages from main are written into the
 // active framed stream to the peer.
 BareKit.IPC.on('data', (data) => {

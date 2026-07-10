@@ -19,6 +19,19 @@ const logLines = []
 let logArea = null
 let inputField = null
 let writableFired = false
+let lastReadable = Date.now()
+let everReceivedReadable = false
+let workletDeathReported = false
+
+// Async write helper that surfaces {error} results from the native IPC
+// callback. The native side returns a single-dict: {error: <msg>} on
+// failure, {} on success. Threads through both write sites (send button
+// + auto-echo) so IPC errors always produce a visible log line.
+function sendToWorklet(text) {
+  ipc.write(text, (result) => {
+    if (result && result.error) log('IPC ERR: ' + result.error)
+  })
+}
 
 const worklet = new Worklet({ memoryLimit: 64 * 1024 * 1024 })
 worklet.start('/spike.bundle', null, [])
@@ -27,6 +40,8 @@ worklet.start('/spike.bundle', null, [])
 const ipc = new IPC(worklet)
 
 ipc.readable = () => {
+  lastReadable = Date.now()
+  everReceivedReadable = true
   const d = ipc.read()
   if (!d) return
   const msg = d.toString()
@@ -41,7 +56,7 @@ ipc.readable = () => {
     if (payload.indexOf('echo: ') === 0) return
     const echoed = 'echo: ' + payload
     if (writableFired) {
-      ipc.write(echoed)
+      sendToWorklet(echoed)
       log('sent echo: ' + echoed)
     }
   }
@@ -57,7 +72,7 @@ ipc.writable = () => {
 // the home indicator), log fills the rest below. Earlier attempts pinned
 // the input to the bottom, where the home indicator + safe-area insets
 // made the field hard to tap on notched devices.
-const win = Ti.UI.createWindow({ backgroundColor: '#fff', layout: 'vertical' })
+const win = Ti.UI.createWindow({ backgroundColor: '#fff' })
 
 
 logArea = Ti.UI.createTextArea({
@@ -78,7 +93,7 @@ const inputRow = Ti.UI.createView({
   layout: 'horizontal',
   bottom: 80, left: 20, right: 20,
   height: 50,
-  backgroundColor: '#eee'
+  backgroundColor: 'blue'
 })
 win.add(inputRow)
 
@@ -112,7 +127,7 @@ function send() {
     log(!writableFired ? 'IPC not writable yet' : 'empty input')
     return
   }
-  ipc.write(text)
+  sendToWorklet(text)
   log('sent: ' + text)
   inputField.value = ''
 }
@@ -126,6 +141,19 @@ inputField.addEventListener('return', send)
 setInterval(() => {
   const avail = Ti.Platform.availableMemory
   log('appmem avail=' + (avail ? (avail / 1024 / 1024).toFixed(1) + 'MB' : 'n/a'))
+}, 5000)
+
+// Worklet-death watchdog: fires only if the worklet produced ZERO IPC
+// output for 30s since startup -- the true silent-crash case (a native
+// addon crash before the worklet could send anything, including before
+// the 15s TIMEOUT's setTimeout fires). If the worklet ever sent a line,
+// it was alive at least briefly, so silence after that is "idle / no
+// peer" not "dead" -- the watchdog stays quiet in that case.
+setInterval(() => {
+  if (!workletDeathReported && !everReceivedReadable && Date.now() - lastReadable > 30000) {
+    workletDeathReported = true
+    log('WATCHDOG: worklet produced no IPC output for 30s -- likely crashed before startup')
+  }
 }, 5000)
 
 win.open()
