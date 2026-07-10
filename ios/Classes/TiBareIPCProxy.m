@@ -29,6 +29,13 @@
   __weak TiBareIPCProxy *weakSelf = self;
   _ipc.writable = ^(BareIPC *ipc) {
     __strong TiBareIPCProxy *strong = weakSelf;
+    if (!strong) return;
+    // The GCD WRITE source is level-triggered: it fires continuously while
+    // the outgoing fd has buffer space, which is always when idle. Leaving
+    // it armed makes this block + the main-queue dispatch + the KrollCallback
+    // run on every fire -> unbounded native memory growth (~170 MB/s).
+    // One-shot: deregister the native block before delivering the event.
+    strong->_ipc.writable = nil;
     dispatch_async(dispatch_get_main_queue(), ^{
       if (strong->_writableCb) {
         [strong->_writableCb call:@[strong] thisObject:strong];
