@@ -13,6 +13,42 @@ The native runtime binaries (the BareKit framework on iOS, the `libbare-kit.so` 
 
 For a comprehensive architecture + dataflow overview with diagrams, see [`architecture.md`](architecture.md).
 
+### Two-layer model at a glance
+
+The Titanium host and the Bare worklet are two separate JavaScript
+worlds -- separate heaps, separate event loops. They talk only through
+the IPC byte stream and the push/reply channel. All native-to-JS
+callbacks dispatch onto the platform main thread.
+
+```
++--------------------------------------+        +--------------------------------------+
+| Titanium app (host process)          |        | Bare worklet (isolated thread)      |
+|                                      |        |                                      |
+|  Resources/app.js                    |        |  user code (e.g. spike.js)           |
+|       | require('ti.barekit') + new  |        |       | require.addon                |
+|       v                              |        |       v                              |
+|  ti.barekit module                   |        |  native addons                       |
+|  (native proxy + CommonJS extension) |        |  (udx-native, sodium-native, ...)    |
+|       |                              |        |                                      |
+|       | start / push / read / write   |        |                                      |
+|       v                              |        |                                      |
+|  Native bridge:                      |        |                                      |
+|    iOS   TiBare*Proxy.m (Obj-C)       |        |                                      |
+|    And   TiBare*Proxy.java + JNI      |        |                                      |
+|       |                              |        |                                      |
+|       v                              |        |                                      |
+|  bare-kit (prebuilt):                |        |                                      |
+|    BareKit.framework /               |        |                                      |
+|    libbare-kit.so + bare-kit.jar      |        |                                      |
+|       |                              |        |                                      |
+|       +-- thread + own heap + uv ----+------> |  Bare JS runtime                     |
+|                                      |        |                                      |
++--------------------------------------+        +--------------------------------------+
+                   |                                            ^
+                   |   IPC byte stream (readable / writable)    |
+                   +--------------------------------------------+
+```
+
 ## Installation
 
 Build the module (`ti build -p [ios|android] --build-only`) and register it in your application's `tiapp.xml`:
@@ -112,6 +148,31 @@ Terminates the worklet and releases the Bare runtime. The worklet object cannot 
 
 ```js
 worklet.terminate();
+```
+
+##### Worklet lifecycle
+
+```
+                  +----------+
+   new Worklet -->| created  |
+   (opts)         +-----+----+
+                       |
+                  start(filename, source, args)
+                       |
+                       v
+                  +----------+  suspend(linger?)  +-----------+
+                  | started  |------------------>| suspended |
+                  |          |<------------------|           |
+                  +----+-----+   resume()        +-----+-----+
+                       |                             |
+                       | terminate()                 | terminate()
+                       v                             v
+                  +-----------+               +-----------+
+                  | terminated|<--------------|           |
+                  +-----+-----+               +-----------+
+                        |
+                        v
+                       [*]   cannot restart -- construct a new Worklet
 ```
 
 #### `worklet.push(payload, callback)`
@@ -386,6 +447,36 @@ ipc.writable = () => {
 ```
 
 The synchronous `ipc.write(data)` form and the asynchronous `ipc.write(data, callback)` form are both subject to this constraint.
+
+##### IPC read/write flow
+
+```
+  Host (Titanium app)                         Worklet (Bare thread)
+  ----------------------                      ---------------------
+       |                                            |
+       |  (1) ipc.writable = () => { ... }         |
+       |  -----------------------------            |
+       |                 arm writable source       |
+       |  ----------------------------------------> |
+       |                                            |
+       |  (2) writable fires (one-shot)            |
+       |  <--------------------------------------   |
+       |  (3) ipc.write(data)                      |
+       |  ---------------------------------------> |
+       |                                            |  BareKit.IPC.on('data', ...)
+       |                                            |
+       |  (4) worklet replies BareKit.IPC.write()   |
+       |  <--------------------------------------- |
+       |  (5) ipc.readable fires                   |
+       |  (6) ipc.read() -> Ti.Blob                |
+       |                                            |
+```
+
+The host writes ONLY after the writable callback fires (step 2 -> step 3).
+Worklet-to-host data arrives as a `readable` callback (step 5); the host calls
+`read()` synchronously inside it (step 6). The writable source is level-triggered
+but the native proxy deregisters on first fire, so `ipc.writable` delivers exactly
+one notification -- reassign it for another.
 
 ## Usage example
 
