@@ -74,7 +74,6 @@ ipc.writable = () => {
 // made the field hard to tap on notched devices.
 const win = Ti.UI.createWindow({ backgroundColor: '#fff' })
 
-
 logArea = Ti.UI.createTextArea({
   value: '',
   color: '#000',
@@ -87,7 +86,6 @@ logArea = Ti.UI.createTextArea({
   backgroundColor: '#fafafa'
 })
 win.add(logArea)
-
 
 const inputRow = Ti.UI.createView({
   layout: 'horizontal',
@@ -119,7 +117,6 @@ inputRow.add(sendButton)
 
 inputField.addEventListener('focus', () => log('field focused'))
 inputField.addEventListener('blur', () => log('field blurred'))
-
 
 function send() {
   const text = inputField.value
