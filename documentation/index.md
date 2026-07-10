@@ -430,8 +430,25 @@ setTimeout(() => worklet.terminate(), 6000);
 
 - **Worklet `console.log` does not go to `Ti.API`.** Inside the worklet source, `console.log` routes to the Bare / OS logger, not to the Titanium log. To surface worklet output in `Ti.API`, write it over `BareKit.IPC` and log it from the main-side `readable` callback.
 - **All native-to-JS callbacks are dispatched on the platform main thread.** You can safely touch Titanium UI from inside `push` / `read` / `write` callbacks.
+- **The `ipc.writable` callback is one-shot.** The native `BareIPC` writable source is a level-triggered GCD `DISPATCH_SOURCE_TYPE_WRITE` that fires continuously while the outgoing fd has buffer space (always, when idle). `ti.barekit` deregisters the native writable block on first fire, so `ipc.writable` delivers exactly one "ready to write" notification -- it will not fire again. If you need another writable signal, reassign `ipc.writable`. Leaving it armed would dispatch to the main thread and invoke the callback on every fire, driving unbounded native memory growth.
 - **Data types.** The IPC `read` / `write` / `push` APIs use `Ti.Blob` for binary data. Strings are accepted on the bridge and are UTF-8-encoded when crossing into native code.
 - **No CMake or NDK on the app path.** Native binaries are prebuilt and checked in to the module; building the module only requires the Titanium SDK toolchain.
+
+## Hyperswarm spike (DemoApp/BareKitDemo)
+
+The `DemoApp/BareKitDemo/` app is a hyperswarm spike that proves this
+module can load the holepunch native addon stack (sodium-native,
+udx-native) and run hyperswarm inside a Bare worklet on iOS. It uses
+the bundle-loader mode (`worklet.start('/spike.bundle', null, [])`)
+with a `.bundle` produced by `bare-pack`. Two simulator instances join
+a fixed topic, discover each other through the DHT, and round-trip a
+message (app A -> worklet A -> peer -> worklet B -> app B, which
+auto-echoes back). See `DemoApp/BareKitDemo/README.md` for the full
+build + run instructions, prerequisites, success criteria, and
+failure-mode diagnostics.
+
+This is a spike, not a production app -- the full pear-chat port
+(autobase, blind-pairing, hyperdb, chat UI) is a separate later cycle.
 
 ## License
 
