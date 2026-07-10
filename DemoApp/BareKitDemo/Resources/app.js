@@ -1,9 +1,13 @@
 // TiBareKit hyperswarm spike -- Task 4: full UI + two-sim echo.
 const { Worklet, IPC } = require('ti.barekit')
 
+const MAX_LOG_LINES = 500
 const log = (msg) => {
   Ti.API.info('[spike] ' + msg)
   logLines.push(msg)
+  if (logLines.length > MAX_LOG_LINES) {
+    logLines.splice(0, logLines.length - MAX_LOG_LINES)
+  }
   if (logArea) {
     logArea.value = logLines.join('\n')
     // Keep the latest lines visible.
@@ -29,10 +33,13 @@ ipc.readable = () => {
   log('worklet: ' + msg)
 
   // Auto-echo: if we received a "peer: <msg>" line, echo it back so the
-  // originator sees a round-trip. This implements the spec's
-  // "hello" -> "echo: hello" flow.
+  // originator sees a round-trip. Guard against re-echoing "echo: ..." --
+  // without this, the two apps ping-pong "echo: echo: echo: ..." forever,
+  // growing the string each round and flooding IPC + the log buffer.
   if (msg.indexOf('peer: ') === 0) {
-    const echoed = 'echo: ' + msg.slice('peer: '.length)
+    const payload = msg.slice('peer: '.length)
+    if (payload.indexOf('echo: ') === 0) return
+    const echoed = 'echo: ' + payload
     if (writableFired) {
       ipc.write(echoed)
       log('sent echo: ' + echoed)
@@ -46,33 +53,29 @@ ipc.writable = () => {
   log('IPC writable; ready to send')
 }
 
-// UI: a log view (top) + a text field + send button (bottom).
+// UI: input bar pinned to the TOP (guaranteed visible + tappable, clear of
+// the home indicator), log fills the rest below. Earlier attempts pinned
+// the input to the bottom, where the home indicator + safe-area insets
+// made the field hard to tap on notched devices.
 const win = Ti.UI.createWindow({ backgroundColor: '#fff', layout: 'vertical' })
-
-logArea = Ti.UI.createTextArea({
-  value: '',
-  color: '#000',
-  font: { fontSize: 12, fontFamily: 'Menlo' },
-  editable: false,
-  top: 20, left: 20, right: 20,
-  height: '78%',
-  verticalAlign: 'top'
-})
-win.add(logArea)
 
 const inputRow = Ti.UI.createView({
   layout: 'horizontal',
-  top: 10, left: 20, right: 20, bottom: 20,
-  height: Ti.UI.SIZE
+  top: 20, left: 20, right: 20,
+  height: 50,
+  backgroundColor: '#eee'
 })
 win.add(inputRow)
 
 inputField = Ti.UI.createTextField({
   hintText: 'type a message',
   value: '',
-  width: '70%',
+  width: '72%',
   height: 40,
-  borderStyle: Ti.UI.INPUT_BORDERSTYLE_ROUNDED
+  borderStyle: Ti.UI.INPUT_BORDERSTYLE_ROUNDED,
+  softKeyboardOnFocus: true,
+  returnKeyType: Ti.UI.RETURNKEY_SEND,
+  backgroundColor: '#fff'
 })
 inputRow.add(inputField)
 
@@ -80,11 +83,27 @@ const sendButton = Ti.UI.createButton({
   title: 'Send',
   width: '25%',
   height: 40,
-  left: 10
+  left: 8
 })
 inputRow.add(sendButton)
 
-sendButton.addEventListener('click', () => {
+inputField.addEventListener('focus', () => log('field focused'))
+inputField.addEventListener('blur', () => log('field blurred'))
+
+logArea = Ti.UI.createTextArea({
+  value: '',
+  color: '#000',
+  font: { fontSize: 12, fontFamily: 'Menlo' },
+  editable: false,
+  touchEnabled: false,
+  top: 10, left: 20, right: 20,
+  bottom: 20,
+  verticalAlign: 'top',
+  backgroundColor: '#fafafa'
+})
+win.add(logArea)
+
+function send() {
   const text = inputField.value
   if (!text || !writableFired) {
     log(!writableFired ? 'IPC not writable yet' : 'empty input')
@@ -93,7 +112,18 @@ sendButton.addEventListener('click', () => {
   ipc.write(text)
   log('sent: ' + text)
   inputField.value = ''
-})
+}
+
+sendButton.addEventListener('click', send)
+inputField.addEventListener('return', send)
+
+// Diagnostic: report app-side available memory every 5s alongside the
+// worklet's RSS report. If availableMemory drops continuously while the
+// worklet RSS climbs, the leak is native-side (DHT/udx/sodium).
+setInterval(() => {
+  const avail = Ti.Platform.availableMemory
+  log('appmem avail=' + (avail ? (avail / 1024 / 1024).toFixed(1) + 'MB' : 'n/a'))
+}, 5000)
 
 win.open()
 
