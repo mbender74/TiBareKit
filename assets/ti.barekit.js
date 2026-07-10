@@ -32,6 +32,9 @@ class Worklet {
   push(payload, callback) { this._proxy.push(payload, callback); }
 }
 
+// On Android this class is never instantiated -- the export guard below
+// returns {} so require('ti.barekit').IPC is the native proxy. The isAndroid
+// branches here are kept for documentation of the platform factory shape.
 class IPC {
   constructor(worklet) {
     const native = require('ti.barekit');

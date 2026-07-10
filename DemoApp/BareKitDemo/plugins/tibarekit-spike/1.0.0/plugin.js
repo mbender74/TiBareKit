@@ -1,22 +1,32 @@
 // Titanium build plugin: runs bare-pack to produce Resources/spike*.bundle
-// + offloads native addon .bare prebuilds to Resources/node_modules/ before
-// the Titanium compile step.
+// + relocates native addon .bare prebuilds so the stock bare worklet can
+// extract them at runtime (before the Titanium compile step).
 //
-// --offload-addons writes .bare files as real files next to the bundle
-// (Resources/node_modules/<pkg>/prebuilds/<host>/<addon>.bare) and records
-// file: URLs in the bundle that resolve to those real paths at runtime.
-// This is required because the Bare bundle protocol does not extract
-// embedded addons to disk before dlopen -- the .bare must be a real file
-// at a path the bundle can resolve. Without --offload-addons, the .bare is
+// Addon resolution differs by platform:
+//
+// iOS: one host (ios-arm64-simulator), one bundle (Resources/spike.bundle).
+// bare-pack runs with --offload-addons, which writes each .bare as a real
+// file next to the bundle (Resources/node_modules/<pkg>/prebuilds/<host>/
+// <addon>.bare) and records file: URLs in the bundle. iOS resolves those
+// file: URLs through NSBundle at runtime so dlopen sees a real file. This
+// is required on iOS because the Bare bundle protocol does not extract
+// embedded addons to disk before dlopen -- the .bare must be a real file at
+// a path the bundle can resolve. Without --offload-addons, the .bare is
 // embedded in the bundle as a virtual path, dlopen fails, and the worklet
 // aborts (SIGABRT).
 //
-// iOS: one host (ios-arm64-simulator), one bundle (Resources/spike.bundle).
-// Android: all 4 ABIs -- bare-pack runs once per android host, producing
-// Resources/spike-android-<host>.bundle for each. The plugin copies each
-// host's .bare prebuilds from worklet/node_modules/<pkg>/prebuilds/<host>/
-// to Resources/node_modules/<pkg>/prebuilds/<host>/ so every ABI's native
-// addons ship in the APK. app.js picks the bundle matching the runtime ABI.
+// Android: all 4 ABIs -- bare-pack runs once per android host (no
+// --offload-addons), producing Resources/spike-android-<host>.bundle for
+// each. Android's APK assets are not on the filesystem, so dlopen on an
+// offloaded path fails; instead the addons are embedded in the bundle and
+// relocateAddonsToAssets() (below) moves their keys from bundle.addons into
+// bundle.assets (concat, not replace). The stock bare worklet only
+// extracts bundle.assets to the filesystem (not bundle.addons), so this
+// relocation makes the worklet extract the .bare bytes to the runtime
+// assets dir and rewrite each binding.js `.` resolution to a file: URL
+// Bare.Addon.load can dlopen. app.js passes that writable assets dir
+// (resolved from applicationDataDirectory) and picks the bundle matching
+// the runtime ABI.
 //
 // Note on mechanism: SDK 14.0.0 loads project plugins via cli.scanHooks() on
 // the plugin's hooks/ directory (see node-titanium-sdk/lib/titanium.js
@@ -29,13 +39,6 @@ import path from 'node:path'
 import fs from 'node:fs'
 
 export const id = 'tibarekit-spike'
-
-// bare-bundle lives inside the globally-installed bare-pack package. Resolve
-// it through createRequire pointed at bare-pack's bin so this plugin doesn't
-// depend on the plugin's own node_modules layout.
-const npmRootG = execSync('npm root -g').toString().trim()
-const barePackRequire = createRequire(path.join(npmRootG, 'bare-pack', 'bin.js'))
-const Bundle = barePackRequire('bare-bundle')
 
 // The stock bare worklet (bare-kit shared/worklet.js:110) runs
 // `unpack(bundle, { files: false, assets: true }, cb)` -- it extracts
@@ -52,10 +55,23 @@ const Bundle = barePackRequire('bare-bundle')
 // `assets` dir and rewrites each binding.js `.` resolution to a `file:` URL
 // pointing at the extracted file, which `Bare.Addon.load` can dlopen. No
 // bare-kit rebuild or Java bundle parser needed.
+//
+// bare-bundle is resolved lazily (inside this function) so iOS builds -- which
+// never call relocateAddonsToAssets -- do not pay the `npm root -g` +
+// createRequire cost or depend on bare-bundle being resolvable from global
+// bare-pack. bare-bundle lives inside the globally-installed bare-pack
+// package; resolve it through createRequire pointed at bare-pack's bin so
+// this plugin doesn't depend on the plugin's own node_modules layout.
 function relocateAddonsToAssets(bundlePath) {
+  const npmRootG = execSync('npm root -g').toString().trim()
+  const barePackRequire = createRequire(path.join(npmRootG, 'bare-pack', 'bin.js'))
+  const Bundle = barePackRequire('bare-bundle')
   const bundle = Bundle.from(fs.readFileSync(bundlePath))
   if (bundle.addons.length === 0) return
-  bundle.assets = bundle.addons.slice()
+  // Concat into bundle.assets rather than replacing it. A future bundle may
+  // have both native addons AND non-addon assets; a replace would silently
+  // drop the non-addon assets.
+  bundle.assets = [...bundle.assets, ...bundle.addons]
   bundle.addons = []
   fs.writeFileSync(bundlePath, bundle.toBuffer())
 }

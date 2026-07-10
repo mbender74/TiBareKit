@@ -486,9 +486,13 @@ non-obvious and load-bearing:
    not a positional worklet proxy argument. `TiBareIPCProxy` overrides
    `handleCreationArgs` to read the `worklet` key from the JS-side
    options and pass it to the native constructor, so `new IPC(worklet)`
-   wires the native IPC correctly. (`assets/ti.barekit.js` translates
-   the cross-platform `new IPC(worklet)` call into the platform-specific
-   factory shape.)
+   wires the native IPC correctly. On Android the wiring happens entirely
+   in the native proxy: `assets/ti.barekit.js` is export-guarded out on
+   Android (see point #3 below), so `require('ti.barekit').IPC` is the
+   native IPC proxy class and `new IPC(worklet)` goes straight to the
+   native `handleCreationArgs` override. The `isAndroid` branch in the
+   JS wrapper's `IPC` constructor is dead code on Android -- it is kept
+   only to document the platform factory shape.
 
 2. **One-shot `writable`.** The Java `BareIPC` writable source is a
    level-triggered `Handler` post that fires continuously while the
