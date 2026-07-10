@@ -78,6 +78,13 @@ public class TiBareIPCProxy extends KrollProxy {
     writableCb = cb;
     if (ipc == null) return;
     ipc.writable(() -> {
+      // One-shot: deregister the native writable poll before delivering the JS
+      // callback. The native writable source is level-triggered -- it fires
+      // continuously while the outgoing fd has buffer space (always, when idle).
+      // Leaving it armed makes this callback + the main-looper dispatch + the
+      // KrollFunction call run on every fire -> unbounded native memory growth
+      // (~170 MB/s observed on iOS before fix 09726b0). Mirrors the iOS one-shot.
+      ipc.writable(null);
       if (writableCb != null) {
         new Handler(Looper.getMainLooper()).post(() ->
           writableCb.call(getKrollObject(), new Object[] { this }));
