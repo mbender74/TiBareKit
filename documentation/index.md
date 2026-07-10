@@ -11,6 +11,8 @@ The module ships two JavaScript classes from `require('ti.barekit')`:
 
 The native runtime binaries (the BareKit framework on iOS, the `libbare-kit.so` slices and `bare-kit.jar` on Android) are prebuilt and checked in to this repository; the module does not require CMake or the NDK on the app developer's machine. All native-to-JS callbacks are dispatched on the platform main thread.
 
+For a comprehensive architecture + dataflow overview with diagrams, see [`architecture.md`](architecture.md).
+
 ## Installation
 
 Build the module (`ti build -p [ios|android] --build-only`) and register it in your application's `tiapp.xml`:

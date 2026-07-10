@@ -19,7 +19,10 @@ ID can only be used once by all public modules in Titanium.
 ## Documentation
 -----------------------------
 
-You should provide at least minimal documentation for your module in `documentation` folder using the Markdown syntax.
+Module documentation lives in the `documentation/` folder:
+
+- [`documentation/index.md`](documentation/index.md) -- API reference (`Worklet`, `IPC`, configuration, bundle-loader mode, contracts).
+- [`documentation/architecture.md`](documentation/architecture.md) -- comprehensive architecture + dataflow overview with Mermaid diagrams (the two-layer model, the native bridge, the iOS-vs-Android addon resolution strategy, the build pipeline, the hyperswarm spike dataflow, platform divergence).
 
 For more information on the Markdown syntax, refer to this documentation at:
 
