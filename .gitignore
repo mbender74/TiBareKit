@@ -24,5 +24,6 @@ DemoApp/BareKitDemo/modules/
 
 # Demo app spike build artifacts
 DemoApp/BareKitDemo/Resources/spike.bundle
+DemoApp/BareKitDemo/Resources/spike-android-*.bundle
 DemoApp/BareKitDemo/Resources/node_modules/
 DemoApp/BareKitDemo/worklet/node_modules/

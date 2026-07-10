@@ -33,7 +33,21 @@ function sendToWorklet(text) {
   })
 }
 
-const worklet = new Worklet({ memoryLimit: 64 * 1024 * 1024 })
+// iOS resolves offloaded addon file: URLs through NSBundle and needs no
+// assets dir. Android's APK assets are not on the filesystem, so the bare
+// worklet must extract the bundle's embedded addons to a writable dir before
+// dlopen -- pass `assets` pointing at an app-private writable path. The
+// worklet (shared/worklet.js) creates the dir + a tmp subdir under it on
+// first run.
+//
+// Ti.Filesystem.applicationDataDirectory on Android returns the scheme prefix
+// "appdata-private://" (not a real path), so resolve the dir to a real
+// filesystem path via Ti.File.nativePath before handing it to the worklet.
+const workletOpts = { memoryLimit: 64 * 1024 * 1024 }
+if (Ti.Platform.osname === 'android') {
+  workletOpts.assets = Ti.Filesystem.getFile(Ti.Filesystem.applicationDataDirectory, 'bare-assets').nativePath
+}
+const worklet = new Worklet(workletOpts)
 
 // Pick the prebuilt bundle. iOS: single Resources/spike.bundle (ios-arm64-simulator).
 // Android: one of Resources/spike-android-<host>.bundle, selected by runtime ABI.
