@@ -24,10 +24,41 @@
 // the loader picks it up. The package.json "type": "module" makes the .js
 // files ESM, which is what scanHooks (await import()) expects in 14.0.0.
 import { execSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import fs from 'node:fs'
 
 export const id = 'tibarekit-spike'
+
+// bare-bundle lives inside the globally-installed bare-pack package. Resolve
+// it through createRequire pointed at bare-pack's bin so this plugin doesn't
+// depend on the plugin's own node_modules layout.
+const npmRootG = execSync('npm root -g').toString().trim()
+const barePackRequire = createRequire(path.join(npmRootG, 'bare-pack', 'bin.js'))
+const Bundle = barePackRequire('bare-bundle')
+
+// The stock bare worklet (bare-kit shared/worklet.js:110) runs
+// `unpack(bundle, { files: false, assets: true }, cb)` -- it extracts
+// `bundle.assets` to the filesystem + rewrites their URLs to `file:`, but it
+// does NOT touch `bundle.addons` (bare-unpack defaults `addons = files = false`
+// when files:false and addons not explicit). So embedded `.bare` native
+// addons registered as `bundle.addons` stay as virtual bundle paths and dlopen
+// fails on Android (APK assets aren't on the filesystem; iOS dodges this via
+// NSBundle + --offload-addons).
+//
+// Workaround: after bare-pack (which embeds the addon bytes under the same
+// keys), move each addon key from `bundle.addons` into `bundle.assets`. The
+// worklet's asset-unpack path then extracts the `.bare` bytes to the runtime
+// `assets` dir and rewrites each binding.js `.` resolution to a `file:` URL
+// pointing at the extracted file, which `Bare.Addon.load` can dlopen. No
+// bare-kit rebuild or Java bundle parser needed.
+function relocateAddonsToAssets(bundlePath) {
+  const bundle = Bundle.from(fs.readFileSync(bundlePath))
+  if (bundle.addons.length === 0) return
+  bundle.assets = bundle.addons.slice()
+  bundle.addons = []
+  fs.writeFileSync(bundlePath, bundle.toBuffer())
+}
 
 // Map each android ABI to its bare-pack host + bundle name. All 4 ship in the
 // APK; app.js selects the one matching the runtime ABI.
@@ -37,25 +68,6 @@ const ANDROID_TARGETS = [
   { host: 'android-ia32',  bundle: 'spike-android-ia32.bundle' },
   { host: 'android-x64',   bundle: 'spike-android-x64.bundle' }
 ]
-
-// Copy every <pkg>/prebuilds/<host>/*.bare from the worklet node_modules into
-// Resources/node_modules/<pkg>/prebuilds/<host>/ so the offloaded file: URLs
-// in the bundle resolve to real files in the APK assets.
-function copyPrebuilds(workletDir, resourcesDir, host) {
-  const nmSrc = path.join(workletDir, 'node_modules')
-  const nmDst = path.join(resourcesDir, 'node_modules')
-  if (!fs.existsSync(nmSrc)) return
-  for (const pkg of fs.readdirSync(nmSrc)) {
-    const pbSrc = path.join(nmSrc, pkg, 'prebuilds', host)
-    if (!fs.existsSync(pbSrc)) continue
-    const pbDst = path.join(nmDst, pkg, 'prebuilds', host)
-    fs.mkdirSync(pbDst, { recursive: true })
-    for (const f of fs.readdirSync(pbSrc)) {
-      if (!f.endsWith('.bare')) continue
-      fs.copyFileSync(path.join(pbSrc, f), path.join(pbDst, f))
-    }
-  }
-}
 
 export function init(logger, config, cli) {
   cli.on('build.pre.compile', {
@@ -72,14 +84,28 @@ export function init(logger, config, cli) {
         if (platform === 'android') {
           for (const t of ANDROID_TARGETS) {
             const bundlePath = path.join(resourcesDir, t.bundle)
+            // Embed addons in the bundle (no --offload-addons). iOS can resolve
+            // offloaded addon file: URLs through NSBundle, but Android's APK
+            // assets are not on the filesystem, so dlopen on an offloaded path
+            // fails. The stock bare worklet also does NOT extract embedded
+            // `bundle.addons` to the filesystem (only `bundle.assets`), so
+            // embedded addons alone would still leave dlopen pointing at a
+            // virtual bundle path. relocateAddonsToAssets (below) moves the
+            // addon keys into `bundle.assets`, after which the worklet's
+            // asset-unpack path extracts the .bare bytes to the runtime
+            // `assets` dir and rewrites each binding.js `.` resolution to a
+            // file: URL Bare.Addon.load can dlopen. app.js passes that writable
+            // `assets` dir (resolved from applicationDataDirectory via
+            // Ti.File.nativePath, since applicationDataDirectory is the scheme
+            // "appdata-private://" on Android, not a real filesystem path).
             execSync(
-              `bare-pack --host ${t.host} --offload-addons --out "${bundlePath}" spike.js`,
+              `bare-pack --host ${t.host} --out "${bundlePath}" spike.js`,
               { stdio: 'inherit', cwd: workletDir }
             )
             if (!fs.existsSync(bundlePath)) {
               throw new Error('bare-pack did not produce ' + t.bundle)
             }
-            copyPrebuilds(workletDir, resourcesDir, t.host)
+            relocateAddonsToAssets(bundlePath)
             logger.info('tibarekit-spike: ' + t.bundle + ' ready (host ' + t.host + ')')
           }
         } else {
