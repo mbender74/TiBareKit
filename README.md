@@ -131,6 +131,23 @@ Code strong!
 Native binaries are checked in. Rebuild them when upgrading bare-kit. The
 flow mirrors bare-kit's upstream `publish.yml` workflow.
 
+**Automated path:** `scripts/update-bare-kit.sh` wraps the iOS, Mac Catalyst,
+and Android flows below into one command:
+
+```bash
+./scripts/update-bare-kit.sh --bare-kit /path/to/bare-kit [--platforms ios,android,catalyst] [--verify]
+```
+
+It resolves the cmake-toolchains dir, ninja binary, and MacOSX SDK
+automatically; substitutes the Mac Catalyst toolchain placeholders at runtime
+(no manual `<MACOSX_SDK>` / `<BARE_MAKE_CMAKE_TOOLCHAINS>` editing); runs
+`npm install`, the 3 iOS slices, the xcframework assembly, the Catalyst
+re-stamp + lipo + slice append, and the Android AAR extraction; and optionally
+runs `ti build --build-only` per platform to verify. See `--help` for flags.
+
+The manual steps below are the fallback if you need to run a single slice or
+debug a step in isolation.
+
 Prerequisites: CMake 4.0+, Xcode, Android SDK + NDK 28.x, Node.js, and the
 `bare-make` npm package (`npm install --global bare-make`).
 
@@ -141,8 +158,10 @@ cd /path/to/bare-kit
 npm install                      # first time only
 
 # Build each slice (the prebuilds/Makefile only assembles; slices are built
-# with bare-make per the upstream publish.yml flow):
-for spec in "ios arm64" "ios arm64 --simulator" "ios x86_64 --simulator"; do
+# with bare-make per the upstream publish.yml flow). NOTE: bare-make's --arch
+# uses 'x64' for x86_64 (the cmake-toolchains files are named ios-x64-simulator.cmake),
+# NOT 'x86_64' -- 'x86_64' throws "No toolchain found for target 'ios-x86_64-simulator'".
+for spec in "ios arm64" "ios arm64 --simulator" "ios x64 --simulator"; do
   set -- $spec
   rm -rf build
   bare-make generate --platform "$1" --arch "$2" ${3:+$3} --with-debug-symbols
@@ -152,7 +171,7 @@ for spec in "ios arm64" "ios arm64 --simulator" "ios x86_64 --simulator"; do
   cp -a build/apple/BareKit.framework "prebuilds/$slice/BareKit.framework"
 done
 
-# Note: prebuilds/ios-arm64-simulator and prebuilds/ios-x86_64-simulator are
+# Note: prebuilds/ios-arm64-simulator and prebuilds/ios-x64-simulator are
 # intermediate slices; `make ios/BareKit.xcframework` lipo-combines them into
 # the final prebuilds/ios-arm64_x86_64-simulator slice.
 
