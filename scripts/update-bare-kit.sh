@@ -23,7 +23,7 @@
 #
 # Prereqs (checked at start; missing ones error out):
 #   - CMake 4.0+, Xcode (xcodebuild), ninja (resolved via bare-make's deps)
-#   - bare-make, bare-pack on PATH (npm install --global bare-make bare-pack)
+#   - bare-make on PATH (npm install --global bare-make)
 #   - Node.js + npm
 #   - For android: ANDROID_HOME and ANDROID_NDK_HOME env vars set
 #   - For --verify: ti CLI on PATH
@@ -129,7 +129,6 @@ require_cmd cmake "required for ios + catalyst"
 require_cmd xcodebuild "required for ios + catalyst"
 require_cmd ninja "required for ios + catalyst (or resolve via bare-make)"
 require_cmd bare-make "required for ios (npm install --global bare-make)"
-require_cmd bare-pack "required for the spike plugin (npm install --global bare-pack)"
 require_cmd python3 "required for catalyst re-stamp"
 require_cmd npm "required for bare-kit npm install"
 [ "$DO_ANDROID" = 1 ] && require_cmd ./gradlew "required for android (run from bare-kit root)"
@@ -348,8 +347,9 @@ if [ "$DO_ANDROID" = 1 ]; then
 fi
 
 if [ "$VERIFY" = 1 ]; then
-  [ "$DO_IOS" = 1 ] && verify_module ios
-  [ "$DO_CATALYST" = 1 ] && verify_module ios   # catalyst slice lives in the ios xcframework
+  # The catalyst slice lives inside the ios xcframework, so a single ios
+  # verify covers both. Don't verify ios twice when both are set.
+  { [ "$DO_IOS" = 1 ] || [ "$DO_CATALYST" = 1 ]; } && verify_module ios
   [ "$DO_ANDROID" = 1 ] && verify_module android
 fi
 
