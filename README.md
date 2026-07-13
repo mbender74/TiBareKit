@@ -8,6 +8,9 @@ JavaScript in an isolated Bare worklet process (on a dedicated thread, with
 its own heap and libuv loop) and exchanges bytes with it over an in-process
 IPC channel.
 
+Don´t know what it is good for? Check this out:
+https://www.youtube.com/watch?v=n76zGrt4aRY
+
 ## Cloning with Git LFS
 
 The prebuilt native binaries (the `.so` files under
