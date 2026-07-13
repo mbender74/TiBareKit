@@ -23,6 +23,7 @@ Module documentation lives in the `documentation/` folder:
 
 - [`documentation/index.md`](documentation/index.md) -- API reference (`Worklet`, `IPC`, configuration, bundle-loader mode, contracts).
 - [`documentation/architecture.md`](documentation/architecture.md) -- comprehensive architecture + dataflow overview with Mermaid diagrams (the two-layer model, the native bridge, the iOS-vs-Android addon resolution strategy, the build pipeline, the hyperswarm spike dataflow, platform divergence).
+- [`documentation/howto.md`](documentation/howto.md) -- guide to building a chat app with social-network features (identity, hyperswarm networking, hypercore/autobase messages, hyperbee social graph, IPC protocol, build + verify each layer).
 
 For more information on the Markdown syntax, refer to this documentation at:
 
