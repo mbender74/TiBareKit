@@ -193,9 +193,13 @@ results.
 - TiBareKit module built + installed (see `README.md` -> Prebuild, or use
   `scripts/update-bare-kit.sh` to rebuild from a bare-kit checkout).
 - `bare-pack` on PATH (`npm install --global bare-pack`).
-- The build plugin copied from `DemoApp/BareKitDemo/plugins/tibarekit-spike/`
-  and adapted (see Step 12). It runs `bare-pack` and the Android addon
-  relocation at `build.pre.compile`.
+- The build plugin. The easy path: run
+  `./scripts/scaffold-barekit-plugin.sh --app-dir <your-app> --name <entry> --with-worklet`
+  from the TiBareKit repo root -- it drops a parameterized copy of the
+  demo's plugin into the app and seeds a starter `worklet/`. The manual
+  path: copy `DemoApp/BareKitDemo/plugins/tibarekit-spike/` and adapt
+  (see Step 12). Either way, the plugin runs `bare-pack` and the Android
+  addon relocation at `build.pre.compile`.
 - Worklet npm deps (pin in `worklet/package.json`):
   `hyperswarm`, `corestore`, `hypercore`, `autobase`, `hyperbee`,
   `sodium-native`, `framed-stream`, `blind-pairing`, `b4a`,
@@ -1288,8 +1292,29 @@ global.ui = {
 
 ## Step 12: Build plugin + bundle
 
-Copy `DemoApp/BareKitDemo/plugins/tibarekit-spike/1.0.0/plugin.js` and
-adapt: change the `id`, the worklet entry (`spike.js` -> `app.js`), and
+**Automated path:** `scripts/scaffold-barekit-plugin.sh` (in the TiBareKit
+repo) drops a parameterized copy of the demo's plugin into any Titanium
+app, with the worklet entry name + bundle prefix substituted throughout,
+and optionally seeds a starter `worklet/`. This is the recommended path
+for new apps -- it avoids hand-editing the plugin's `id`, the bundle names,
+and the `bare-pack` entry argument.
+
+```bash
+# from the TiBareKit repo root
+./scripts/scaffold-barekit-plugin.sh \
+  --app-dir /path/to/MyChatApp \
+  --name chat \
+  --plugin-name tibarekit-chat \
+  --with-worklet
+```
+
+This writes `plugins/tibarekit-chat/1.0.0/{plugin.js, hooks/tibarekit-chat.js, package.json}`
+and seeds `worklet/{chat.js, package.json}`. It prints the `tiapp.xml`
+snippet to paste (the `<modules>` + `<plugins>` blocks). See `--help` for
+all flags.
+
+**Manual path:** Copy `DemoApp/BareKitDemo/plugins/tibarekit-spike/1.0.0/plugin.js`
+and adapt: change the `id`, the worklet entry (`spike.js` -> `app.js`), and
 the bundle names. The addon-resolution logic (iOS `--offload-addons`,
 Android embed + `relocateAddonsToAssets`) is load-bearing -- keep it
 verbatim. See `architecture.md` -> "Bundle + native addon resolution"

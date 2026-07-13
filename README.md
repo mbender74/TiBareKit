@@ -124,6 +124,7 @@ storage automatically. If the push fails with an LFS auth error, run
 
 - [Cloning with Git LFS](#cloning-with-git-lfs)
 - [Quick start](#quick-start)
+- [Scaffolding a build plugin into a new app](#scaffolding-a-build-plugin-into-a-new-app)
 - [Example usage](#example-usage)
 - [API summary](#api-summary)
 - [Documentation](#documentation)
@@ -169,6 +170,66 @@ ipc.readable = () => { Ti.API.info('worklet: ' + ipc.read().toString()); };
 See [`documentation/index.md`](documentation/index.md) for the full API
 reference, including the single-dict callback contract and the
 write-before-writable constraint.
+
+## Scaffolding a build plugin into a new app
+
+Bundle-loader mode (loading a `bare-pack` `.bundle` with embedded native
+addons) needs a Titanium build plugin that runs `bare-pack` at
+`build.pre.compile` -- the module alone does not pack the worklet source.
+The demo app ships one checked in at
+`DemoApp/BareKitDemo/plugins/tibarekit-spike/1.0.0/`; new apps do not.
+
+`scripts/scaffold-barekit-plugin.sh` drops a parameterized copy of that
+plugin into any Titanium app, with the worklet entry name and bundle
+prefix substituted throughout. Optionally seeds a starter
+`worklet/<name>.js` + `package.json`. Prints the `tiapp.xml` snippet to
+paste.
+
+```bash
+# from the TiBareKit repo root
+./scripts/scaffold-barekit-plugin.sh --app-dir /path/to/MyApp \
+  --name chat --plugin-name tibarekit-chat --with-worklet
+```
+
+This writes:
+
+```
+MyApp/plugins/tibarekit-chat/1.0.0/
+  plugin.js                      # parameterized: spike -> chat, tibarekit-spike -> tibarekit-chat
+  hooks/tibarekit-chat.js        # re-exports id + init from ../plugin.js
+  package.json                   # "type": "module" for ESM hooks
+MyApp/worklet/
+  chat.js                        # starter worklet entry (echo loop)
+  package.json                   # sodium-native, hyperswarm, framed-stream
+```
+
+Then paste the printed snippet into `MyApp/tiapp.xml`:
+
+```xml
+<modules>
+  <module version="1.0.0">ti.barekit</module>
+</modules>
+
+<plugins>
+  <plugin>tibarekit-chat</plugin>
+</plugins>
+```
+
+And build:
+
+```bash
+cd MyApp/worklet && npm install       # fetch holepunch deps
+cd .. && ti build -p ios              # plugin runs bare-pack at build.pre.compile
+```
+
+Flags: `--name` (entry + bundle prefix, default `app`), `--plugin-name`
+(default `tibarekit`), `--version` (default `1.0.0`), `--with-worklet`
+(seed starter `worklet/`). See `--help` for the full list. The script does
+not auto-patch `tiapp.xml` -- pasting the snippet is deliberate so you can
+place the `<modules>`/`<plugins>` blocks in the right spot.
+
+For the manual path (copy + hand-edit the demo's plugin), see
+[`documentation/howto.md`](documentation/howto.md) Step 12.
 
 ## Example usage
 
