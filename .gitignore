@@ -27,3 +27,5 @@ DemoApp/BareKitDemo/Resources/spike.bundle
 DemoApp/BareKitDemo/Resources/spike-android-*.bundle
 DemoApp/BareKitDemo/Resources/node_modules/
 DemoApp/BareKitDemo/worklet/node_modules/
+# Superpowers planning + spec scratch
+/docs/superpowers/
