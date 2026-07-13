@@ -1,6 +1,6 @@
 # TiBareKit - a TiDev Titanium Mobile SDK iOS / Android Module for https://github.com/holepunchto/bare-kit and https://docs.pears.com
 
-A Titanium SDK module that wraps the [holepunchto/bare-kit](https://github.com/holepunchto/bare-kit)
+A Titanium Mobile SDK (https://github.com/tidev/titanium-sdk/) module that wraps the [holepunchto/bare-kit](https://github.com/holepunchto/bare-kit)
 runtime (the same runtime that powers [Pear](https://docs.pears.com)) and
 exposes it to Titanium applications on iOS and Android. Bare is a small,
 fast JavaScript runtime from Holepunch. A Titanium app uses TiBareKit to run
