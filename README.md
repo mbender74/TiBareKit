@@ -8,6 +8,72 @@ JavaScript in an isolated Bare worklet process (on a dedicated thread, with
 its own heap and libuv loop) and exchanges bytes with it over an in-process
 IPC channel.
 
+## Cloning with Git LFS
+
+The prebuilt native binaries (the `.so` files under
+`android/platform/android/jniLibs/` and the `BareKit` binaries inside
+`ios/platform/BareKit.xcframework/`, plus the historical
+`android/lib/bare-kit.aar`) are tracked by
+[Git LFS](https://git-lfs.github.com/). Each is 50-70 MB and would bloat
+the repo history if committed directly. Git LFS stores the binary content
+out-of-band and leaves a small text pointer in the git object database.
+
+### First-time setup
+
+Install the Git LFS extension on your machine (one-time per machine):
+
+```bash
+# macOS (Homebrew)
+brew install git-lfs
+# Debian/Ubuntu
+sudo apt-get install git-lfs
+# Windows (Scoop)
+scoop install git-lfs
+```
+
+Then enable LFS for your user (one-time per user account):
+
+```bash
+git lfs install
+```
+
+### Cloning
+
+After the one-time setup above, clone normally -- the LFS smudge filter
+fetches the binary content for each checked-out file automatically:
+
+```bash
+git clone git@github.com:mbender74/TiBareKit.git
+```
+
+If you cloned before the one-time setup was done (or used
+`GIT_LFS_SKIP_SMUDGE=1` to speed up the clone), the working-tree binaries
+will be tiny text pointer files instead of the real ELF/Mach-O binaries,
+and `ti build` will fail. Fix it by fetching the LFS objects:
+
+```bash
+cd TiBareKit
+git lfs install   # if not done yet
+git lfs pull
+```
+
+Verify the binaries are real (not pointers):
+
+```bash
+file android/platform/android/jniLibs/arm64-v8a/libbare-kit.so
+# Expected:  ELF 64-bit LSB shared object, ARM aarch64, ...
+# NOT:       ASCII text (a pointer file would show this)
+```
+
+### For maintainers rebuilding prebuilds
+
+After running `./scripts/update-bare-kit.sh` (see
+[Prebuild (maintainers)](#prebuild-maintainers)), the LFS clean filter
+converts the rebuilt binaries to LFS pointers on `git add`. Commit and push
+as usual -- the LFS pre-push hook uploads the new binary objects to LFS
+storage automatically. If the push fails with an LFS auth error, run
+`git lfs login` and retry.
+
 ## Why use it
 
 - **Offload CPU-heavy or network-heavy work** from the Titanium main thread
@@ -51,6 +117,7 @@ IPC channel.
 
 ## Table of contents
 
+- [Cloning with Git LFS](#cloning-with-git-lfs)
 - [Quick start](#quick-start)
 - [Example usage](#example-usage)
 - [API summary](#api-summary)
@@ -196,10 +263,6 @@ Module documentation lives in the `documentation/` folder:
 - [`documentation/architecture.md`](documentation/architecture.md) -- comprehensive architecture + dataflow overview with Mermaid diagrams (the two-layer model, the native bridge, the iOS-vs-Android addon resolution strategy, the build pipeline, the hyperswarm spike dataflow, platform divergence).
 - [`documentation/howto.md`](documentation/howto.md) -- guide to building a chat app with social-network features (identity, hyperswarm networking, hypercore/autobase messages, hyperbee social graph, IPC protocol, build + verify each layer).
 
-For more information on the Markdown syntax, refer to this documentation at:
-
-<http://daringfireball.net/projects/markdown/>
-
 ## Building the module
 
 Simply run `ti build -p [ios|android] --build-only` which will compile and package your module.
@@ -315,9 +378,12 @@ worklet messages in the Titanium log, have the worklet call
 
 ### Large file warnings on push
 
-The prebuilt native binaries (`.framework`, `.so`, `.jar`, `.aar`) are
-larger than GitHub's 50 MB recommended maximum. GitHub accepts them but
-warns. Consider Git LFS if you will rebuild often and the history grows.
+The prebuilt native binaries (`.framework`, `.so`, `.aar`) are tracked by
+Git LFS (see [Cloning with Git LFS](#cloning-with-git-lfs)). If you see
+GitHub's ">50 MB" warnings on push, you either skipped the LFS setup or
+the files are not matching the `.gitattributes` patterns. Run
+`git lfs install`, verify `.gitattributes` covers the path, then
+`git add --renormalize .` and commit.
 
 ## Contributing
 
