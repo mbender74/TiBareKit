@@ -8,7 +8,7 @@ JavaScript in an isolated Bare worklet process (on a dedicated thread, with
 its own heap and libuv loop) and exchanges bytes with it over an in-process
 IPC channel.
 
-# Build P2P apps without servers (with holepunching and DHT)
+## Build P2P apps without servers (with holepunching and DHT)
 
 Don´t know what it is good for? Check this out:
 https://www.youtube.com/watch?v=n76zGrt4aRY
